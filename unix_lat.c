@@ -26,11 +26,11 @@
     OTHER DEALINGS IN THE SOFTWARE.
 */
 
-
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
-#include <time.h>
+#include <sys/time.h>
 #include <stdint.h>
 
 

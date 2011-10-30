@@ -26,12 +26,12 @@
     OTHER DEALINGS IN THE SOFTWARE.
 */
 
-
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 #include <stdint.h>
 #include <netdb.h>
 
@@ -40,8 +40,7 @@ int main(int argc, char *argv[])
 {
   int size;
   char *buf;
-  int64_t count, i, delta;
-  struct timeval start, stop;
+  int64_t count, i;
 
   ssize_t len;
   size_t sofar;

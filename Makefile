@@ -1,11 +1,11 @@
 
-CFLAGS = -g
+CFLAGS = -g -Wall
 
 all: pipe_lat pipe_thr \
 	unix_lat unix_thr \
 	tcp_lat tcp_thr \
-	tcp_local_lat tcp_remote_lat \
-	shm
+	tcp_local_lat tcp_remote_lat
+#	shm
 
 shm: CFLAGS += -lrt
 

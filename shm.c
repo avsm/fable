@@ -1,8 +1,9 @@
 /* Measure latency of IPC using shm */
 
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
+#include <sys/time.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <sys/ipc.h>

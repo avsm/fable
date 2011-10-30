@@ -26,12 +26,12 @@
     OTHER DEALINGS IN THE SOFTWARE.
 */
 
-
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 #include <stdint.h>
 #include <netdb.h>
 
@@ -46,13 +46,10 @@ int main(int argc, char *argv[])
   ssize_t len;
   size_t sofar;
 
-  int yes = 1;
   int ret;
-  struct sockaddr_storage their_addr;
-  socklen_t addr_size;
   struct addrinfo hints;
   struct addrinfo *res;
-  int sockfd, new_fd;
+  int sockfd;
 
   if (argc != 6) {
     printf ("usage: tcp_lat <bind-to> <host> <port> <message-size> <roundtrip-count>\n");
@@ -100,7 +97,7 @@ int main(int argc, char *argv[])
     exit(1);
   }
 
-  gettimeofday(&start);
+  gettimeofday(&start, NULL);
 
   for (i = 0; i < count; i++) {
 
@@ -120,7 +117,7 @@ int main(int argc, char *argv[])
       
   }
 
-  gettimeofday(&stop);
+  gettimeofday(&stop, NULL);
 
   delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1e6 +
 	   stop.tv_usec - start.tv_usec);
