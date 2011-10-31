@@ -33,6 +33,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <stdint.h>
+#include <err.h>
 
 
 int main(int argc, char *argv[])
@@ -55,7 +56,7 @@ int main(int argc, char *argv[])
 
   buf = malloc(size);
   if (buf == NULL) {
-    perror("malloc");
+    err(1, "malloc");
     return 1;
   }
 
@@ -73,31 +74,28 @@ int main(int argc, char *argv[])
   }
 
   if (!fork()) {  /* child */
+    int r;
     for (i = 0; i < count; i++) {
-      
-      if (read(ifds[0], buf, size) != size) {
-        perror("read");
-        return 1;
-      }
-      
-      if (write(ofds[1], buf, size) != size) {
-        perror("write");
-        return 1;
-      }
+      r = read(ifds[0], buf, size);
+      if (r != size)
+        err(1, "child read ret=%d", r);
+     
+      r = write(ofds[1], buf, size);
+      if (r != size)
+        err(1, "child write ret=%d", r);
     }
   } else { /* parent */
-  
     gettimeofday(&start, NULL);
 
     for (i = 0; i < count; i++) {
 
       if (write(ifds[1], buf, size) != size) {
-        perror("write");
+        perror("child write");
         return 1;
       }
 
       if (read(ofds[0], buf, size) != size) {
-        perror("read");
+        perror("child read");
         return 1;
       }
       
