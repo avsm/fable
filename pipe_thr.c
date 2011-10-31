@@ -1,8 +1,8 @@
 /* 
     Measure throughput of IPC using pipes
 
-
     Copyright (c) 2010 Erik Rigtorp <erik@rigtorp.com>
+    Copyright (c) 2011 Anil Madhavapeddy <anil@recoil.org>
 
     Permission is hereby granted, free of charge, to any person
     obtaining a copy of this software and associated documentation
@@ -31,10 +31,12 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/time.h>
-#include <stdint.h>
+#include <inttypes.h>
+#include <err.h>
+#include "xutil.h"
 
-
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
   int fds[2];
 
@@ -51,48 +53,30 @@ int main(int argc, char *argv[])
   size = atoi(argv[1]);
   count = atol(argv[2]);
 
-  buf = malloc(size);
-  if (buf == NULL) {
-    perror("malloc");
-    exit(1);
-  }
+  buf = xmalloc(size);
 
-  printf("message size: %i octets\n", size);
-  printf("message count: %lli\n", count);
-
-  if (pipe(fds) == -1) {
-    perror("pipe");
-    exit(1);
-  }
+  if (pipe(fds) == -1)
+    err(1, "pipe");
 
   if (!fork()) {  
     /* child */
 
-    for (i = 0; i < count; i++) {      
-      if (read(fds[0], buf, size) != size) {
-        perror("read");
-        exit(1);
-      }
-    }
+    for (i = 0; i < count; i++)
+      xread(fds[0], buf, size);
   } else { 
     /* parent */
 
     gettimeofday(&start, NULL);
 
-    for (i = 0; i < count; i++) {
-      if (write(fds[1], buf, size) != size) {
-        perror("write");
-        exit(1);
-      }
-    }
+    for (i = 0; i < count; i++)
+      xwrite(fds[1], buf, size);
 
     gettimeofday(&stop, NULL);
 
     delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1e6 +
 	     stop.tv_usec - start.tv_usec);
 
-    printf("average throughput: %lli msg/s\n", (count * (int64_t) 1e6) / delta);
-    printf("average throughput: %lli Mb/s\n", (((count * (int64_t) 1e6) / delta) * size * 8) / (int64_t) 1e6);
+    printf("pipe_thr %d %" PRId64 " %" PRId64 "\n", size, count, (((count * (int64_t) 1e6) / delta) * size * 8) / (int64_t) 1e6);
   }
   
   return 0;

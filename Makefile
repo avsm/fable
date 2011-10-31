@@ -1,13 +1,21 @@
 
-CFLAGS = -g -Wall
+CFLAGS = -g -Wall -O3
+
+.PHONY: all clean run
 
 all: pipe_lat pipe_thr \
 	unix_lat unix_thr \
 	tcp_lat tcp_thr \
 	tcp_local_lat tcp_remote_lat
-#	shm
 
-shm: CFLAGS += -lrt
+
+%_lat: atomicio.o xutil.o %_lat.o
+	$(CC) $(CFLAGS) -o $@ $^
+
+%_thr: atomicio.o xutil.o %_thr.o
+	$(CC) $(CFLAGS) -o $@ $^
+
+#shm: CFLAGS += -lrt
 
 run:
 	./pipe_lat 100 10000

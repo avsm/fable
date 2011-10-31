@@ -1,8 +1,8 @@
 /* 
     Measure latency of IPC using unix domain sockets
 
-
     Copyright (c) 2010 Erik Rigtorp <erik@rigtorp.com>
+    Copyright (c) 2011 Anil Madhavapeddy <anil@recoil.org>
 
     Permission is hereby granted, free of charge, to any person
     obtaining a copy of this software and associated documentation
@@ -31,10 +31,13 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/time.h>
-#include <stdint.h>
+#include <inttypes.h>
+#include <err.h>
 
+#include "xutil.h"
 
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
   int sv[2]; /* the pair of socket descriptors */
   int size;
@@ -50,59 +53,26 @@ int main(int argc, char *argv[])
   size = atoi(argv[1]);
   count = atol(argv[2]);
 
-  buf = malloc(size);
-  if (buf == NULL) {
-    perror("malloc");
-    return 1;
-  }
+  buf = xmalloc(size);
 
-  printf("message size: %i octets\n", size);
-  printf("roundtrip count: %lli\n", count);
-
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) {
-    perror("socketpair");
-    exit(1);
-  }
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+    err(1, "socketpair");
 
   if (!fork()) {  /* child */
     for (i = 0; i < count; i++) {
-      
-      if (read(sv[1], buf, size) != size) {
-        perror("read");
-        return 1;
-      }
-      
-      if (write(sv[1], buf, size) != size) {
-        perror("write");
-        return 1;
-      }
+      xread(sv[1], buf, size);
+      xwrite(sv[1], buf, size);
     }
   } else { /* parent */
-
     gettimeofday(&start, NULL);
-
     for (i = 0; i < count; i++) {
-
-      if (write(sv[0], buf, size) != size) {
-        perror("write");
-        return 1;
-      }
-
-      if (read(sv[0], buf, size) != size) {
-        perror("read");
-        return 1;
-      }
-      
+      xwrite(sv[0], buf, size);
+      xread(sv[0], buf, size);
     }
-
     gettimeofday(&stop, NULL);
-
     delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1e6 +
 	     stop.tv_usec - start.tv_usec);
-    
-    printf("average latency: %lli us\n", delta / (count * 2));
-
+    printf("unix_lat %d %" PRId64 " %" PRId64 "\n", size, count, delta / (count * 2));
   }
-  
   return 0;
 }

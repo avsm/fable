@@ -1,8 +1,8 @@
 /* 
     Measure latency of IPC using tcp sockets
 
-
     Copyright (c) 2010 Erik Rigtorp <erik@rigtorp.com>
+    Copyright (c) 2011 Anil Madhavapeddy <anil@recoil.org>
 
     Permission is hereby granted, free of charge, to any person
     obtaining a copy of this software and associated documentation
@@ -32,19 +32,19 @@
 #include <sys/socket.h>
 #include <string.h>
 #include <sys/time.h>
-#include <stdint.h>
+#include <err.h>
+#include <inttypes.h>
 #include <netdb.h>
 
+#include "xutil.h"
 
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
   int size;
   char *buf;
   int64_t count, i, delta;
   struct timeval start, stop;
-
-  ssize_t len;
-  size_t sofar;
 
   int yes = 1;
   int ret;
@@ -62,111 +62,56 @@ int main(int argc, char *argv[])
   size = atoi(argv[1]);
   count = atol(argv[2]);
 
-  buf = malloc(size);
-  if (buf == NULL) {
-    perror("malloc");
-    return 1;
-  }
+  buf = xmalloc(size);
 
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;  // use IPv4 or IPv6, whichever
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
-  if ((ret = getaddrinfo("127.0.0.1", "3491", &hints, &res)) != 0) {
-    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret));
-    return 1;
-  }
-
-  printf("message size: %i octets\n", size);
-  printf("roundtrip count: %lli\n", count);
+  if ((ret = getaddrinfo("127.0.0.1", "3491", &hints, &res)) != 0)
+    errx(1, "getaddrinfo: %s\n", gai_strerror(ret));
 
   if (!fork()) {  /* child */
 
-    if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) {
-      perror("socket");
-      exit(1);
-    }
+    if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
+      err(1, "socket");
 
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
-      perror("setsockopt");
-      exit(1);
-    } 
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+      err(1, "setsockopt");
     
-    if (bind(sockfd, res->ai_addr, res->ai_addrlen) == -1) {
-      perror("bind");
-      exit(1);
-    }
+    if (bind(sockfd, res->ai_addr, res->ai_addrlen) == -1)
+      err(1, "bind");
     
-    if (listen(sockfd, 1) == -1) {
-      perror("listen");
-      exit(1);
-    } 
+    if (listen(sockfd, 1) == -1)
+      err(1, "listen");
     
     addr_size = sizeof their_addr;
     
-    if ((new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &addr_size)) == -1) {
-      perror("accept");
-      exit(1);
-    } 
+    if ((new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &addr_size)) == -1)
+      err(1, "accept");
 
     for (i = 0; i < count; i++) {
-      
-      for (sofar = 0; sofar < size; ) {
-	len = read(new_fd, buf, size - sofar);
-	if (len == -1) {
-	  perror("read");
-	  return 1;
-	}
-	sofar += len;
-      }
-            
-      if (write(new_fd, buf, size) != size) {
-        perror("write");
-        return 1;
-      }
+      xread(new_fd, buf, size);
+      xwrite(new_fd, buf, size);
     }
   } else { /* parent */
-
-    sleep(1);
+   
+    sleep(1); 
+    if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
+      err(1, "socket");
     
-    if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) {
-      perror("socket");
-      exit(1);
-    }
-    
-    if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1) {
-      perror("connect");
-      exit(1);
-    }
+    if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
+      err(1, "connect");
 
-    gettimeofday(&start, NULL);
-
+    gettimeofday(&start, NULL); 
     for (i = 0; i < count; i++) {
-
-      if (write(sockfd, buf, size) != size) {
-        perror("write");
-        return 1;
-      }
-
-      for (sofar = 0; sofar < size; ) {
-	len = read(sockfd, buf, size - sofar);
-	if (len == -1) {
-	  perror("read");
-	  return 1;
-	}
-	sofar += len;
-      }
-      
+      xwrite(sockfd, buf, size);
+      xread(sockfd, buf, size);
     }
-
     gettimeofday(&stop, NULL);
-
     delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1e6 +
 	     stop.tv_usec - start.tv_usec);
-    
-    printf("average latency: %lli us\n", delta / (count * 2));
-
+    printf("tcp_lat %d %" PRId64 " %" PRId64 "\n", size, count, delta / (count * 2));
   }
-  
   return 0;
 }
