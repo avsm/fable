@@ -26,3 +26,4 @@
 void * xmalloc(size_t);
 void xread(int, void *, size_t);
 void xwrite(int, const void *, size_t);
+int  xfork(void);

@@ -71,7 +71,7 @@ main(int argc, char *argv[])
   if ((ret = getaddrinfo("127.0.0.1", "3491", &hints, &res)) != 0)
     errx(1, "getaddrinfo: %s\n", gai_strerror(ret));
 
-  if (!fork()) {  /* child */
+  if (!xfork()) {  /* child */
 
     if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
       err(1, "socket");

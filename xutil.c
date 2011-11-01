@@ -25,6 +25,7 @@
 
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <err.h>
 #include "atomicio.h"
 
@@ -54,4 +55,41 @@ xwrite(int fd, void *buf, size_t count)
   r = atomicio(vwrite, fd, buf, count);
   if (r != count)
     err(1, "xwrite");
+}
+
+#include <sched.h>
+static void
+setaffinity(int cpunum)
+{
+  cpu_set_t *mask;
+  size_t size;
+  int i;
+  int nrcpus = 48;
+  pid_t pid;
+  mask = CPU_ALLOC(nrcpus);
+  size = CPU_ALLOC_SIZE(nrcpus);
+  CPU_ZERO_S(size, mask);
+  CPU_SET_S(cpunum, size, mask);
+  pid = getpid();
+  i = sched_setaffinity(pid, size, mask);
+  if (i == -1)
+    err(1, "sched_setaffinity");
+  CPU_FREE(mask);
+}
+
+/* Fork and pin to different CPUs */
+int
+xfork(void)
+{
+  char *affinity = getenv("SEPARATE_CPU");
+  int cpu1 = 0;
+  int cpu2 = 0;
+  if (affinity != NULL) cpu2 = 1;
+  if (!fork()) { /* child */
+    setaffinity(cpu1);
+    return 0;
+  } else { /* parent */ 
+    setaffinity(cpu2);
+    return 1;
+ }
 }
