@@ -42,16 +42,10 @@ main(int argc, char *argv[])
   int sv[2]; /* the pair of socket descriptors */
   int size;
   char *buf;
-  int64_t count, i, delta;
-  struct timeval start, stop;
+  int64_t count, i;
+  bool per_iter_timings;
 
-  if (argc != 3) {
-    printf ("usage: unix_lat <message-size> <roundtrip-count>\n");
-    return 1;
-  }
-
-  size = atoi(argv[1]);
-  count = atol(argv[2]);
+  parse_args(argc, argv, &per_iter_timings, &size, &count);
 
   buf = xmalloc(size);
 
@@ -64,15 +58,13 @@ main(int argc, char *argv[])
       xwrite(sv[1], buf, size);
     }
   } else { /* parent */
-    gettimeofday(&start, NULL);
-    for (i = 0; i < count; i++) {
-      xwrite(sv[0], buf, size);
-      xread(sv[0], buf, size);
-    }
-    gettimeofday(&stop, NULL);
-    delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1e6 +
-	     stop.tv_usec - start.tv_usec);
-    printf("unix_lat %d %" PRId64 " %" PRId64 "\n", size, count, delta / (count * 2));
+    latency_test(
+		 do {
+		   xwrite(sv[0], buf, size);
+		   xread(sv[0], buf, size);
+		 } while (0),
+		 per_iter_timings,
+		 count);
   }
   return 0;
 }
