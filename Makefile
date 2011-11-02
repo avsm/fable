@@ -1,18 +1,19 @@
-
 CFLAGS = -g -Wall -O3 -D_GNU_SOURCE
+LDFLAGS+=-lm
 
 .PHONY: all clean run
 
-all: pipe_lat pipe_thr \
-	unix_lat unix_thr \
-	tcp_lat tcp_thr \
-	tcp_local_lat tcp_remote_lat
+#all: pipe_lat pipe_thr \
+#	unix_lat unix_thr \
+#	tcp_lat tcp_thr \
+#	tcp_local_lat tcp_remote_lat
 
+all: tcp_lat
 
-%_lat: atomicio.o xutil.o %_lat.o
+%_lat: atomicio.o test.o xutil.o %_lat.o
 	$(CC) -lm $(CFLAGS) -o $@ $^
 
-%_thr: atomicio.o xutil.o %_thr.o
+%_thr: atomicio.o test.o xutil.o %_thr.o
 	$(CC) -lm $(CFLAGS) -o $@ $^
 
 #shm: CFLAGS += -lrt

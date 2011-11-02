@@ -1,5 +1,6 @@
 /* 
     Copyright (c) 2011 Anil Madhavapeddy <anil@recoil.org>
+    Copyright (c) 2011 Steven Smith <sos22@cam.ac.uk>
 
     Permission is hereby granted, free of charge, to any person
     obtaining a copy of this software and associated documentation
@@ -31,6 +32,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <err.h>
+#include <inttypes.h>
 #include "atomicio.h"
 #include "xutil.h"
 
@@ -245,26 +247,39 @@ summarise_tsc_counters(unsigned long *counts, int nr_samples)
 }
 
 void
-parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, int64_t *count)
+parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, bool *separate_cpu, int *parallel)
 {
-  char *argv0 = argv[0];
+  int opt;
   *per_iter_timings = false;
-  if (argc == 4 && !strcmp(argv[1], "-p")) {
-    *per_iter_timings = true;
-    argc--;
-    argv++;
+  *separate_cpu = false;
+  *parallel = 1;
+  *size = 1024;
+  *count = 100;
+  while((opt = getopt(argc, argv, "tp:2s:c:")) != -1) {
+    switch(opt) {
+     case 't':
+      *per_iter_timings = true;
+      break;
+     case 'p':
+      *parallel = atoi(optarg);
+     case '2':
+      *separate_cpu = true;
+      break;
+     case 's':
+      *size = atoi(optarg);
+      break;
+     case 'c':
+      *count = atoi(optarg);
+      break;
+     default:
+      errx(1, "unknown command-line option '%c'", opt);
+      break;
+    }
   }
-
-  if (argc != 3) {
-    printf ("usage: %s {-p} <message-size> <roundtrip-count>\n", argv0);
-    exit(1);
-  }
-
-  *size = atoi(argv[1]);
-  *count = atol(argv[2]);
+  fprintf(stderr, "size %d count %" PRId64 " separate_cpu %d parallel %d tsc %d\n", *size, *count, *separate_cpu, *parallel, *per_iter_timings);
 }
 
-static void
+void
 setaffinity(int cpunum)
 {
   cpu_set_t *mask;
@@ -281,21 +296,4 @@ setaffinity(int cpunum)
   if (i == -1)
     err(1, "sched_setaffinity");
   CPU_FREE(mask);
-}
-
-/* Fork and pin to different CPUs */
-int
-xfork(void)
-{
-  char *affinity = getenv("SEPARATE_CPU");
-  int cpu1 = 0;
-  int cpu2 = 0;
-  if (affinity != NULL) cpu2 = 1;
-  if (!fork()) { /* child */
-    setaffinity(cpu1);
-    return 0;
-  } else { /* parent */ 
-    setaffinity(cpu2);
-    return 1;
- }
 }
