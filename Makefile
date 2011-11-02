@@ -10,10 +10,10 @@ all: pipe_lat pipe_thr \
 
 
 %_lat: atomicio.o xutil.o %_lat.o
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) -lm $(CFLAGS) -o $@ $^
 
 %_thr: atomicio.o xutil.o %_thr.o
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) -lm $(CFLAGS) -o $@ $^
 
 #shm: CFLAGS += -lrt
 

@@ -27,6 +27,7 @@
 */
 
 #include <unistd.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -43,8 +44,8 @@ main(int argc, char *argv[])
 {
   int size;
   char *buf;
-  int64_t count, i, delta;
-  struct timeval start, stop;
+  int64_t count, i;
+  bool per_iter_timings;
 
   int yes = 1;
   int ret;
@@ -54,13 +55,7 @@ main(int argc, char *argv[])
   struct addrinfo *res;
   int sockfd, new_fd;
 
-  if (argc != 3) {
-    printf ("usage: tcp_lat <message-size> <roundtrip-count>\n");
-    return 1;
-  }
-
-  size = atoi(argv[1]);
-  count = atol(argv[2]);
+  parse_args(argc, argv, &per_iter_timings, &size, &count);
 
   buf = xmalloc(size);
 
@@ -103,15 +98,13 @@ main(int argc, char *argv[])
     if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
       err(1, "connect");
 
-    gettimeofday(&start, NULL); 
-    for (i = 0; i < count; i++) {
-      xwrite(sockfd, buf, size);
-      xread(sockfd, buf, size);
-    }
-    gettimeofday(&stop, NULL);
-    delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1e6 +
-	     stop.tv_usec - start.tv_usec);
-    printf("tcp_lat %d %" PRId64 " %" PRId64 "\n", size, count, delta / (count * 2));
+    latency_test(
+		 do {
+		   xwrite(sockfd, buf, size);
+		   xread(sockfd, buf, size);
+		 } while (0),
+		 per_iter_timings,
+		 count);
   }
   return 0;
 }

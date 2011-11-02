@@ -23,6 +23,61 @@
     OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#include <stdbool.h>
+
 void * xmalloc(size_t);
 void xread(int, void *, size_t);
 void xwrite(int, const void *, size_t);
+
+void parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, int64_t *count);
+
+static inline unsigned long
+rdtsc(void)
+{
+  unsigned long a, d;
+  asm volatile("rdtsc"
+	       : "=a" (a), "=d" (d)
+	       );
+  return (d << 32) | a;
+}
+void summarise_tsc_counters(unsigned long *counts, int nr_samples);
+
+#define latency_test(body, per_iter_timings, count)			\
+  do {									\
+    struct timeval start;						\
+    struct timeval stop;						\
+    unsigned long *iter_cycles;						\
+    unsigned long delta;						\
+									\
+    /* calm compiler */							\
+    iter_cycles = NULL;							\
+									\
+    if (per_iter_timings) {						\
+      iter_cycles = calloc(sizeof(iter_cycles[0]), count);		\
+      if (!iter_cycles)							\
+	err(1, "calloc");						\
+    }									\
+									\
+    gettimeofday(&start, NULL);						\
+    if (!per_iter_timings) {						\
+      for (i = 0; i < count; i++) {					\
+	body;								\
+      }									\
+    } else {								\
+      for (i = 0; i < count; i++) {					\
+	unsigned long t = rdtsc();					\
+	body;								\
+	iter_cycles[i] = rdtsc() - t;					\
+      }									\
+    }									\
+    gettimeofday(&stop, NULL);						\
+									\
+    delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1000000 +		\
+	     stop.tv_usec - start.tv_usec);				\
+									\
+    printf("pipe_lat %d %" PRId64 " %e\n", size, count,			\
+	   delta / (count * 1e6));					\
+									\
+    if (per_iter_timings)						\
+      summarise_tsc_counters(iter_cycles, count);			\
+  } while (0)
