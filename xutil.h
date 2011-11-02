@@ -83,4 +83,43 @@ void summarise_tsc_counters(unsigned long *counts, int nr_samples);
       summarise_tsc_counters(iter_cycles, count);			\
   } while (0)
 
+#define thr_test(name, body, per_iter_timings, size, count)		\
+  do {									\
+    struct timeval start;						\
+    struct timeval stop;						\
+    unsigned long *iter_cycles;						\
+    unsigned long delta;						\
+									\
+    /* calm compiler */							\
+    iter_cycles = NULL;							\
+									\
+    if (per_iter_timings) {						\
+      iter_cycles = calloc(sizeof(iter_cycles[0]), count);		\
+      if (!iter_cycles)							\
+	err(1, "calloc");						\
+    }									\
+									\
+    gettimeofday(&start, NULL);						\
+    if (!per_iter_timings) {						\
+      for (i = 0; i < count; i++) {					\
+	body;								\
+      }									\
+    } else {								\
+      for (i = 0; i < count; i++) {					\
+	unsigned long t = rdtsc();					\
+	body;								\
+	iter_cycles[i] = rdtsc() - t;					\
+      }									\
+    }									\
+    gettimeofday(&stop, NULL);						\
+									\
+    delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1000000 +		\
+	     stop.tv_usec - start.tv_usec);				\
+									\
+    printf("%s %d %" PRId64 " %" PRId64 "\n", name, size, count,	\
+     ((((count * (int64_t)1e6) / delta) * size * 8) / (int64_t) 1e6));	\
+									\
+    if (per_iter_timings)						\
+      summarise_tsc_counters(iter_cycles, count);			\
+  } while (0)
 

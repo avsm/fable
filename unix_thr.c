@@ -1,7 +1,4 @@
 /* 
-    Measure throughput of IPC using unix domain sockets.
-
-    Copyright (c) 2010 Erik Rigtorp <erik@rigtorp.com>
     Copyright (c) 2011 Anil Madhavapeddy <anil@recoil.org>
 
     Permission is hereby granted, free of charge, to any person
@@ -27,55 +24,69 @@
 */
 
 #include <unistd.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <string.h>
 #include <sys/time.h>
-#include <inttypes.h>
 #include <err.h>
+#include <inttypes.h>
+#include <netdb.h>
+
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <errno.h>
+
+#include "test.h"
 #include "xutil.h"
+
+typedef struct {
+  int sv[2];
+} test_state;
+
+static void
+init_test(test_data *td)
+{
+  test_state *ts = xmalloc(sizeof(test_state));
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, ts->sv) == -1)
+    err(1, "socketpair");
+  td->data = (void *)ts;
+}
+
+static void
+run_child(test_data *td)
+{
+  test_state *ts = (test_state *)td->data;
+  void *buf = xmalloc(td->size);
+  int i;
+
+  for (i = 0; i < td->count; i++) {
+    xread(ts->sv[1], buf, td->size);
+  }
+}
+
+static void
+run_parent(test_data *td)
+{
+  test_state *ts = (test_state *)td->data;
+  void *buf = xmalloc(td->size);
+  int i;
+
+  thr_test("unix_thr",
+    do {
+      xwrite(ts->sv[0], buf, td->size); 
+    } while (0),
+    td->per_iter_timings,
+    td->size,
+    td->count
+  );
+}
 
 int
 main(int argc, char *argv[])
 {
-  int fds[2]; /* the pair of socket descriptors */
-  int size;
-  char *buf;
-  int64_t count, i, delta;
-  struct timeval start, stop;
-
-  if (argc != 3) {
-    printf ("usage: unix_thr <message-size> <message-count>\n");
-    exit(1);
-  }
-  
-  size = atoi(argv[1]);
-  count = atol(argv[2]);
-
-  buf = xmalloc(size);
-
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == -1)
-    err(1, "socketpair");
-  
-  if (!xfork()) {  
-    /* child */
-
-    for (i = 0; i < count; i++)
-      xread(fds[1], buf, size);
-  } else { 
-    /* parent */
-  
-    gettimeofday(&start, NULL);
-
-    for (i = 0; i < count; i++)
-      xwrite(fds[0], buf, size);
-
-    gettimeofday(&stop, NULL);
-    
-    delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1e6 +
-	     stop.tv_usec - start.tv_usec);
-  
-    printf("unix_thr %d %" PRId64 " %" PRId64 "\n", size, count, (((count * (int64_t) 1e6) / delta) * size * 8) / (int64_t) 1e6);
-  }
+  test_t t = { init_test, run_child, run_parent };
+  run_test(argc, argv, &t);
   return 0;
 }
