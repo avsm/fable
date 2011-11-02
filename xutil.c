@@ -246,6 +246,19 @@ summarise_tsc_counters(unsigned long *counts, int nr_samples)
   free(times);
 }
 
+static void
+help(char *argv[])
+{
+  fprintf(stderr, "Usage:\n%s [-h] [-2] [-p <num] [-t] [-s <bytes>] [-c <num>]\n", argv[0]);
+  fprintf(stderr, "-h: show this help message\n");
+  fprintf(stderr, "-2: force one of the processes onto a separate CPU\n");
+  fprintf(stderr, "-p: number of parallel tests to run\n");
+  fprintf(stderr, "-t: use high-res TSC to get more accurate results\n");
+  fprintf(stderr, "-s: Size of each packet\n");
+  fprintf(stderr, "-c: Number of iterations\n");
+  exit(1);
+}
+ 
 void
 parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, bool *separate_cpu, int *parallel)
 {
@@ -255,7 +268,7 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
   *parallel = 1;
   *size = 1024;
   *count = 100;
-  while((opt = getopt(argc, argv, "tp:2s:c:")) != -1) {
+  while((opt = getopt(argc, argv, "h?tp:2s:c:")) != -1) {
     switch(opt) {
      case 't':
       *per_iter_timings = true;
@@ -272,9 +285,12 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
      case 'c':
       *count = atoi(optarg);
       break;
-     default:
-      errx(1, "unknown command-line option '%c'", opt);
-      break;
+     case '?':
+     case 'h':
+      help(argv);
+    default:
+      fprintf(stderr, "unknown command-line option '%c'", opt);
+      help(argv);
     }
   }
   fprintf(stderr, "size %d count %" PRId64 " separate_cpu %d parallel %d tsc %d\n", *size, *count, *separate_cpu, *parallel, *per_iter_timings);
