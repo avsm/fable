@@ -58,7 +58,7 @@ main(int argc, char *argv[])
   if (pipe(fds) == -1)
     err(1, "pipe");
 
-  if (!fork()) {  
+  if (!xfork()) {  
     /* child */
 
     for (i = 0; i < count; i++)

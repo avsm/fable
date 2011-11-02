@@ -56,7 +56,7 @@ main(int argc, char *argv[])
   if (pipe(ifds) == -1)
     err(1, "pipe");
 
-  if (!fork()) {  /* child */
+  if (!xfork()) {  /* child */
     for (i = 0; i < count; i++) {
       xread(ifds[0], buf, size);
       xwrite(ofds[1], buf, size);

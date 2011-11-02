@@ -52,7 +52,7 @@ main(int argc, char *argv[])
   if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
     err(1, "socketpair");
 
-  if (!fork()) {  /* child */
+  if (!xfork()) {  /* child */
     for (i = 0; i < count; i++) {
       xread(sv[1], buf, size);
       xwrite(sv[1], buf, size);

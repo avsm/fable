@@ -1,5 +1,5 @@
 
-CFLAGS = -g -Wall -O3
+CFLAGS = -g -Wall -O3 -D_GNU_SOURCE
 
 .PHONY: all clean run
 

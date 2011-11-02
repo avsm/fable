@@ -28,6 +28,7 @@
 void * xmalloc(size_t);
 void xread(int, void *, size_t);
 void xwrite(int, const void *, size_t);
+int  xfork(void);
 
 void parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, int64_t *count);
 
@@ -81,3 +82,5 @@ void summarise_tsc_counters(unsigned long *counts, int nr_samples);
     if (per_iter_timings)						\
       summarise_tsc_counters(iter_cycles, count);			\
   } while (0)
+
+

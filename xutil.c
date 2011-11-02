@@ -25,6 +25,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <math.h>
+#include <sched.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -261,4 +262,40 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, int64_t *c
 
   *size = atoi(argv[1]);
   *count = atol(argv[2]);
+}
+
+static void
+setaffinity(int cpunum)
+{
+  cpu_set_t *mask;
+  size_t size;
+  int i;
+  int nrcpus = 48;
+  pid_t pid;
+  mask = CPU_ALLOC(nrcpus);
+  size = CPU_ALLOC_SIZE(nrcpus);
+  CPU_ZERO_S(size, mask);
+  CPU_SET_S(cpunum, size, mask);
+  pid = getpid();
+  i = sched_setaffinity(pid, size, mask);
+  if (i == -1)
+    err(1, "sched_setaffinity");
+  CPU_FREE(mask);
+}
+
+/* Fork and pin to different CPUs */
+int
+xfork(void)
+{
+  char *affinity = getenv("SEPARATE_CPU");
+  int cpu1 = 0;
+  int cpu2 = 0;
+  if (affinity != NULL) cpu2 = 1;
+  if (!fork()) { /* child */
+    setaffinity(cpu1);
+    return 0;
+  } else { /* parent */ 
+    setaffinity(cpu2);
+    return 1;
+ }
 }

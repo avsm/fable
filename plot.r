@@ -1,6 +1,4 @@
-inp <- read.table("results.csv", header=T)
-
-plot_fields <- function (lats, xlab, ylab, t) {
+plot_fields <- function (inp, lats, xlab, ylab, t) {
   nlats <- length(lats)
   all_lats <- subset(inp, name %in% lats)
   xrange <- range(all_lats$size) 
@@ -19,6 +17,11 @@ plot_fields <- function (lats, xlab, ylab, t) {
   	 pch=plotchar, lty=linetype)
 }
 
-par(mfrow=c(1,2))
-plot_fields(c("unix_lat", "pipe_lat", "tcp_lat"), "request size (bytes)", "avg latency (us)", "Latency");
-plot_fields(c("unix_thr", "pipe_thr", "tcp_thr"), "request size (bytes)", "avg throughput (Mbs)", "Throughput")
+inp_same <- read.table("results-same.csv", header=T)
+inp_diff <- read.table("results-diff.csv", header=T)
+
+par(mfrow=c(2,2))
+plot_fields(inp_same, c("unix_lat", "pipe_lat", "tcp_lat"), "request size (bytes)", "avg latency (us)", "Latency (same CPU)");
+plot_fields(inp_same, c("unix_thr", "pipe_thr", "tcp_thr"), "request size (bytes)", "avg throughput (Mbs)", "Throughput (same CPU)")
+plot_fields(inp_diff, c("unix_lat", "pipe_lat", "tcp_lat"), "request size (bytes)", "avg latency (us)", "Latency (different CPU)");
+plot_fields(inp_diff, c("unix_thr", "pipe_thr", "tcp_thr"), "request size (bytes)", "avg throughput (Mbs)", "Throughput (different CPU)")
