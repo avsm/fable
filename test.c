@@ -68,7 +68,8 @@ run_test(int argc, char *argv[], test_t *test)
         test->run_child(td);
         exit (0);
       } else { /* parent2 */
-        setaffinity(separate_cpu ? 1 : 0);
+        int a = separate_cpu ? 1 : 0;
+        setaffinity(a);
         test->run_parent(td);
         exit (0);
       }
