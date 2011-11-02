@@ -23,6 +23,7 @@
     OTHER DEALINGS IN THE SOFTWARE.
 */
 #include <sys/time.h>
+#include <assert.h>
 #include <unistd.h>
 #include <math.h>
 #include <sched.h>
@@ -181,9 +182,93 @@ calc_summary_stats(const double *data, int nr_items, struct summary_stats *out)
   out->nr_items = nr_items;
 }
 
+static double
+point_to_percentile(const struct summary_stats *ss, double point)
+{
+  double y1, y2, num, denum;
+  int low, high;
+  int probe;
+
+  if (point < ss->data[0])
+    return 0;
+  else if (point > ss->data[ss->nr_items-1])
+    return 100;
+  low = 0;
+  high = ss->nr_items;
+  while (low + 1 < high) {
+    /* Invariant: everything in slots before @low is less than @point,
+       everything in slots at or after @high is greater than
+       @point. */
+    probe = (high + low) / 2;
+    assert(probe != low);
+    if (point > ss->data[probe]) {
+      low = probe + 1;
+    } else if (point < ss->data[probe]) {
+      high = probe;
+    } else {
+      /* The probe is now in the range of data which is equal to
+	 point. */
+      goto probe_is_point;
+    }
+  }
+  if (high == low + 1) {
+    if (point < ss->data[low]) {
+      assert(low != 0);
+      assert(point > ss->data[low-1]);
+      low--;
+      high--;
+    }
+    if (ss->data[low] == point) {
+      probe = low;
+      goto probe_is_point;
+    } else if (ss->data[high] == point) {
+      probe = high;
+      goto probe_is_point;
+    } else {
+      goto linear_interpolate;
+    }
+  } else {
+    assert(high == low);
+    if (low == 0) {
+      return 0;
+    } else {
+      low = high - 1;
+      goto linear_interpolate;
+    }
+  }
+
+ probe_is_point:
+  low = probe;
+  while (low >= 0 && ss->data[low] == point)
+    low--;
+  high = probe;
+  while (high < ss->nr_items && ss->data[high] == point)
+    high++;
+  return (high + low) * 50.0 / ss->nr_items;
+
+ linear_interpolate:
+  y1 = ss->data[low];
+  y2 = ss->data[high];
+  num = (point + y2 * low - high * y1) * 100.0 / ss->nr_items;
+  denum = y2 - y1;
+  if (fabs(denum / num) < 0.01) {
+    /* The two points we're trying to interpolate between are so close
+       together that we risk numerical error, so we can't use the
+       normal formula.  Fortunately, if they're that close together
+       then it doesn't really matter, and we can use a simple
+       average. */
+    return (low + high) * 50.0 / ss->nr_items;
+  } else {
+    return num / denum;
+  }
+}
+
 static void
 print_summary_stats(const struct summary_stats *ss)
 {
+  double sd_percentiles[7];
+  int i;
+
   printf("\tMean %e, sample sd %e, sample skew %e, sample kurtosis %e\n",
 	 ss->mean, ss->sample_sd, ss->sample_skew, ss->sample_kurtosis);
   printf("\tQuintiles: %e, %e, %e, %e, %e, %e\n",
@@ -197,6 +282,21 @@ print_summary_stats(const struct summary_stats *ss)
 	 ss->data[ss->nr_items / 20],
 	 ss->data[ss->nr_items / 2],
 	 ss->data[ss->nr_items * 19 / 20]);
+
+  /* Also look at how deltas from the mean, in multiples of the SD,
+     map onto percentiles, to get more hints about non-normality. */
+  for (i = 0; i < 7; i++) {
+    double point = ss->mean + ss->sample_sd * (i - 3);
+    sd_percentiles[i] = point_to_percentile(ss, point);
+  }
+  printf("\tSD percentiles: -3 -> %f%%, -2 -> %f%%, -1 -> %f%%, 0 -> %f%%, 1 -> %f%%, 2 -> %f%%, 3 -> %f%%\n",
+	 sd_percentiles[0],
+	 sd_percentiles[1],
+	 sd_percentiles[2],
+	 sd_percentiles[3],
+	 sd_percentiles[4],
+	 sd_percentiles[5],
+	 sd_percentiles[6]);
 }
 
 void
