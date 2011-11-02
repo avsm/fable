@@ -311,6 +311,13 @@ summarise_tsc_counters(unsigned long *counts, int nr_samples)
   struct summary_stats excl_outliers;
   int i;
   int low_thresh, high_thresh;
+  int discard;
+
+  /* Discard the first few samples, so as to avoid startup
+     transients. */
+  discard = nr_samples / 20;
+  counts += discard;
+  nr_samples -= discard;
 
   for (i = 0; i < nr_samples; i++)
     times[i] = counts[i] / clock_freq;
