@@ -302,6 +302,7 @@ print_summary_stats(const struct summary_stats *ss)
 void
 summarise_tsc_counters(unsigned long *counts, int nr_samples)
 {
+  FILE *f;
   double *times = xmalloc(sizeof(times[0]) * nr_samples);
   double clock_freq = get_tsc_freq();
   struct summary_stats whole_dist_stats;
@@ -313,6 +314,18 @@ summarise_tsc_counters(unsigned long *counts, int nr_samples)
 
   for (i = 0; i < nr_samples; i++)
     times[i] = counts[i] / clock_freq;
+
+  printf("By tenths of total run:\n");
+  for (i = 0; i < 10; i++) {
+    struct summary_stats stats;
+    int start = (nr_samples * i) / 10;
+    int end = (nr_samples * (i+1)) / 10;
+    qsort(times + start, end - start, sizeof(times[0]), compare_double);
+    calc_summary_stats(times + start, end - start, &stats);
+    printf("Slice %d/10:\n", i);
+    print_summary_stats(&stats);
+  }
+
   qsort(times, nr_samples, sizeof(times[0]), compare_double);
 
   calc_summary_stats(times, nr_samples, &whole_dist_stats);
