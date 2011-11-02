@@ -262,6 +262,7 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       break;
      case 'p':
       *parallel = atoi(optarg);
+      break;
      case '2':
       *separate_cpu = true;
       break;
