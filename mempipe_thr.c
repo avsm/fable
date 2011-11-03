@@ -116,7 +116,6 @@ run_parent(test_data *td)
   volatile struct msg_header *mh = td->data;
   unsigned long next_tx_offset;
   unsigned long first_unacked_msg;
-  unsigned long last_tx_offset;
 
   assert(td->size < RING_SIZE - sizeof(struct msg_header));
 
@@ -150,9 +149,19 @@ run_parent(test_data *td)
       mh = td->data + (next_tx_offset % RING_SIZE);
       populate_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size);
       mh->size = td->size;
-      last_tx_offset = next_tx_offset;
       next_tx_offset += td->size + sizeof(struct msg_header);
     } while(0),
+    do {
+      /* Wait for child to acknowledge receipt of all messages */
+      while (first_unacked_msg != next_tx_offset) {
+	int size;
+	mh = td->data + (first_unacked_msg % RING_SIZE);
+	do {
+	  size = mh->size;
+	} while (size > 0);
+	first_unacked_msg += -size + sizeof(struct msg_header);
+      }
+    } while (0),
     td);
 
   /* Tell child to go away */

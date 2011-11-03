@@ -53,7 +53,7 @@ rdtsc(void)
 }
 void summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples);
 
-#define lat_or_thr_test(is_lat, name, body, td)				\
+#define lat_or_thr_test(is_lat, name, body, finish, td)			\
   do {									\
     struct timeval start;						\
     struct timeval stop;						\
@@ -82,6 +82,7 @@ void summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples);
 	iter_cycles[i] = rdtsc() - t;					\
       }									\
     }									\
+    finish;								\
     gettimeofday(&stop, NULL);						\
 									\
     delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1000000 +		\
@@ -102,6 +103,6 @@ void summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples);
   } while (0)
 
 #define latency_test(name, body, td)				        \
-  lat_or_thr_test(1, name, body, td)
-#define thr_test(name, body, td) 				        \
-  lat_or_thr_test(0, name, body, td)
+  lat_or_thr_test(1, name, body, do {} while (0), td)
+#define thr_test(name, body, finish, td)	                        \
+  lat_or_thr_test(0, name, body, finish, td)

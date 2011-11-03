@@ -106,6 +106,7 @@ run_parent(test_data *td)
     do {
       xwrite(sockfd, buf, td->size);
     } while (0),
+    do {} while (0),
     td
   );
 }

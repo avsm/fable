@@ -76,6 +76,7 @@ run_parent(test_data *td)
     do {
       xwrite(ts->sv[0], buf, td->size); 
     } while (0),
+    do {} while (0),
     td
   );
 }
