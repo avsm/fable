@@ -1,7 +1,4 @@
 /* 
-    Measure latency of IPC using unix domain sockets
-
-    Copyright (c) 2010 Erik Rigtorp <erik@rigtorp.com>
     Copyright (c) 2011 Anil Madhavapeddy <anil@recoil.org>
 
     Permission is hereby granted, free of charge, to any person
@@ -27,44 +24,71 @@
 */
 
 #include <unistd.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <string.h>
 #include <sys/time.h>
-#include <inttypes.h>
 #include <err.h>
+#include <inttypes.h>
+#include <netdb.h>
 
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <errno.h>
+
+#include "test.h"
 #include "xutil.h"
+
+typedef struct {
+  int sv[2];
+} test_state;
+
+static void
+init_test(test_data *td)
+{
+  test_state *ts = xmalloc(sizeof(test_state));
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, ts->sv) == -1)
+    err(1, "socketpair");
+  td->data = (void *)ts;
+}
+
+static void
+run_child(test_data *td)
+{
+  test_state *ts = (test_state *)td->data;
+  void *buf = xmalloc(td->size);
+  int i;
+
+  for (i = 0; i < td->count; i++) {
+    xread(ts->sv[1], buf, td->size);
+    xwrite(ts->sv[1], buf, td->size); 
+  }
+}
+
+static void
+run_parent(test_data *td)
+{
+  test_state *ts = (test_state *)td->data;
+  void *buf = xmalloc(td->size);
+  int i;
+
+  latency_test("unix_lat",
+    do {
+      xwrite(ts->sv[0], buf, td->size); 
+      xread(ts->sv[0], buf, td->size);
+    } while (0),
+    td->per_iter_timings,
+    td->size,
+    td->count
+  );
+}
 
 int
 main(int argc, char *argv[])
 {
-  int sv[2]; /* the pair of socket descriptors */
-  int size;
-  char *buf;
-  int64_t count, i;
-  bool per_iter_timings;
-
-  parse_args(argc, argv, &per_iter_timings, &size, &count);
-
-  buf = xmalloc(size);
-
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
-    err(1, "socketpair");
-
-  if (!xfork()) {  /* child */
-    for (i = 0; i < count; i++) {
-      xread(sv[1], buf, size);
-      xwrite(sv[1], buf, size);
-    }
-  } else { /* parent */
-    latency_test(
-		 do {
-		   xwrite(sv[0], buf, size);
-		   xread(sv[0], buf, size);
-		 } while (0),
-		 per_iter_timings,
-		 count);
-  }
+  test_t t = { init_test, run_child, run_parent };
+  run_test(argc, argv, &t);
   return 0;
 }

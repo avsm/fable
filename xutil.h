@@ -28,9 +28,9 @@
 void * xmalloc(size_t);
 void xread(int, void *, size_t);
 void xwrite(int, const void *, size_t);
-int  xfork(void);
 
-void parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, int64_t *count);
+void setaffinity(int);
+void parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, bool *separate_cpu, int *parallel);
 
 static inline unsigned long
 rdtsc(void)
@@ -43,7 +43,7 @@ rdtsc(void)
 }
 void summarise_tsc_counters(unsigned long *counts, int nr_samples);
 
-#define latency_test(body, per_iter_timings, count)			\
+#define latency_test(name, body, per_iter_timings, size, count)		\
   do {									\
     struct timeval start;						\
     struct timeval stop;						\
@@ -76,11 +76,50 @@ void summarise_tsc_counters(unsigned long *counts, int nr_samples);
     delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1000000 +		\
 	     stop.tv_usec - start.tv_usec);				\
 									\
-    printf("pipe_lat %d %" PRId64 " %e\n", size, count,			\
+    printf("%s %d %" PRId64 " %f\n", name, size, count,			\
 	   delta / (count * 1e6));					\
 									\
     if (per_iter_timings)						\
       summarise_tsc_counters(iter_cycles, count);			\
   } while (0)
 
+#define thr_test(name, body, per_iter_timings, size, count)		\
+  do {									\
+    struct timeval start;						\
+    struct timeval stop;						\
+    unsigned long *iter_cycles;						\
+    unsigned long delta;						\
+									\
+    /* calm compiler */							\
+    iter_cycles = NULL;							\
+									\
+    if (per_iter_timings) {						\
+      iter_cycles = calloc(sizeof(iter_cycles[0]), count);		\
+      if (!iter_cycles)							\
+	err(1, "calloc");						\
+    }									\
+									\
+    gettimeofday(&start, NULL);						\
+    if (!per_iter_timings) {						\
+      for (i = 0; i < count; i++) {					\
+	body;								\
+      }									\
+    } else {								\
+      for (i = 0; i < count; i++) {					\
+	unsigned long t = rdtsc();					\
+	body;								\
+	iter_cycles[i] = rdtsc() - t;					\
+      }									\
+    }									\
+    gettimeofday(&stop, NULL);						\
+									\
+    delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1000000 +		\
+	     stop.tv_usec - start.tv_usec);				\
+									\
+    printf("%s %d %" PRId64 " %" PRId64 "\n", name, size, count,	\
+     ((((count * (int64_t)1e6) / delta) * size * 8) / (int64_t) 1e6));	\
+									\
+    if (per_iter_timings)						\
+      summarise_tsc_counters(iter_cycles, count);			\
+  } while (0)
 
