@@ -36,6 +36,7 @@
 #include <inttypes.h>
 #include "atomicio.h"
 #include "xutil.h"
+#include "test.h"
 
 void *
 xmalloc(size_t size)

@@ -78,9 +78,7 @@ run_parent(test_data *td)
       xwrite(ts->sv[0], buf, td->size); 
       xread(ts->sv[0], buf, td->size);
     } while (0),
-    td->per_iter_timings,
-    td->size,
-    td->count
+    td
   );
 }
 

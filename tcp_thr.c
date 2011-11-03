@@ -93,7 +93,7 @@ static void
 run_parent(test_data *td)
 {
   struct addrinfo *res = (struct addrinfo *)td->data;
-  int sockfd, i;
+  int sockfd;
   void *buf = xmalloc(td->size);
   sleep(1); 
   if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
@@ -106,9 +106,7 @@ run_parent(test_data *td)
     do {
       xwrite(sockfd, buf, td->size);
     } while (0),
-    td->per_iter_timings,
-    td->size,
-    td->count
+    td
   );
 }
 

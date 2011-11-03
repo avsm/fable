@@ -38,3 +38,65 @@ typedef struct {
 } test_t;
 
 void run_test(int argc, char *argv[], test_t *test);
+
+static inline unsigned long
+rdtsc(void)
+{
+  unsigned long a, d;
+  asm volatile("rdtsc"
+	       : "=a" (a), "=d" (d)
+	       );
+  return (d << 32) | a;
+}
+void summarise_tsc_counters(unsigned long *counts, int nr_samples);
+
+#define lat_or_thr_test(is_lat, name, body, td)				\
+  do {									\
+    struct timeval start;						\
+    struct timeval stop;						\
+    unsigned long *iter_cycles;						\
+    unsigned long delta;						\
+    int i;								\
+    									\
+    /* calm compiler */							\
+    iter_cycles = NULL;							\
+									\
+    if (td->per_iter_timings) {						\
+      iter_cycles = calloc(sizeof(iter_cycles[0]), td->count);		\
+      if (!iter_cycles)							\
+	err(1, "calloc");						\
+    }									\
+									\
+    gettimeofday(&start, NULL);						\
+    if (!td->per_iter_timings) {					\
+      for (i = 0; i < td->count; i++) {					\
+	body;								\
+      }									\
+    } else {								\
+      for (i = 0; i < td->count; i++) {					\
+	unsigned long t = rdtsc();					\
+	body;								\
+	iter_cycles[i] = rdtsc() - t;					\
+      }									\
+    }									\
+    gettimeofday(&stop, NULL);						\
+									\
+    delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1000000 +		\
+	     stop.tv_usec - start.tv_usec);				\
+									\
+    if (is_lat)								\
+      printf("%s %d %" PRId64 " %f\n", name, td->size, td->count,	\
+	     delta / (td->count * 1e6));				\
+    else								\
+      printf("%s %d %" PRId64 " %" PRId64 "\n", name, td->size,		\
+	     td->count,							\
+	     ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); \
+									\
+    if (td->per_iter_timings)						\
+      summarise_tsc_counters(iter_cycles, td->count);			\
+  } while (0)
+
+#define latency_test(name, body, td)				        \
+  lat_or_thr_test(1, name, body, td)
+#define thr_test(name, body, td) 				        \
+  lat_or_thr_test(0, name, body, td)

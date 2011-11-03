@@ -84,9 +84,7 @@ run_parent(test_data *td)
       while (!sp->flag1)
 	;
     } while (0),
-    td->per_iter_timings,
-    td->size,
-    td->count
+    td
   );
 
   printf("Done test\n");

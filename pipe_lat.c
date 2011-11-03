@@ -81,9 +81,7 @@ run_parent(test_data *td)
       xwrite(ps->ifds[1], buf, td->size); 
       xread(ps->ofds[0], buf, td->size);
     } while (0),
-    td->per_iter_timings,
-    td->size,
-    td->count
+    td
   );
 }
 

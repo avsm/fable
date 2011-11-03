@@ -109,9 +109,7 @@ run_parent(test_data *td)
       xwrite(sockfd, buf, td->size);
       xread(sockfd, buf, td->size);
     } while (0),
-    td->per_iter_timings,
-    td->size,
-    td->count
+    td
   );
 }
 
