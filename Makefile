@@ -33,3 +33,5 @@ clean:
 	rm -f tcp_lat tcp_thr 
 	rm -f tcp_local_lat tcp_remote_lat
 	rm -f shm 
+	rm -f memflag_lat
+	rm -f mempipe_thr
