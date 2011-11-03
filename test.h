@@ -94,7 +94,7 @@ void summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples);
 	      delta / (td->count * 1e6));				\
     else								\
       fprintf(td->logfile,						\
-	      "%s %d %" PRId64 " %" PRId64 "Mbps\n", name, td->size,	\
+	      "%s %d %" PRId64 " %" PRId64 " Mbps\n", name, td->size,	\
 	      td->count,						\
 	      ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); \
 									\
