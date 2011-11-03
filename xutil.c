@@ -23,9 +23,11 @@
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
     OTHER DEALINGS IN THE SOFTWARE.
 */
+#include <sys/mman.h>
 #include <sys/time.h>
 #include <assert.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <math.h>
 #include <sched.h>
 #include <stdbool.h>
@@ -450,4 +452,25 @@ setaffinity(int cpunum)
   if (i == -1)
     err(1, "sched_setaffinity");
   CPU_FREE(mask);
+}
+
+void *
+establish_shm_segment(int nr_pages)
+{
+  int fd;
+  void *addr;
+
+  fd = shm_open("/memflag_lat", O_RDWR|O_CREAT|O_EXCL, 0600);
+  if (fd < 0)
+    err(1, "shm_open(\"/memflag_lat\")");
+  shm_unlink("/memflag_lat");
+  if (ftruncate(fd, PAGE_SIZE * nr_pages) < 0)
+    err(1, "ftruncate() shared memory segment");
+  addr = mmap(NULL, PAGE_SIZE * nr_pages, PROT_READ|PROT_WRITE, MAP_SHARED,
+	      fd, 0);
+  if (addr == MAP_FAILED)
+    err(1, "mapping shared memory segment");
+  close(fd);
+
+  return addr;
 }
