@@ -8,13 +8,13 @@ LDFLAGS+=-lm
 #	tcp_lat tcp_thr \
 #	tcp_local_lat tcp_remote_lat
 
-all: tcp_lat tcp_thr pipe_lat pipe_thr unix_lat unix_thr
+all: tcp_lat tcp_thr pipe_lat pipe_thr unix_lat unix_thr memflag_lat
 
 %_lat: atomicio.o test.o xutil.o %_lat.o
-	$(CC) -lm $(CFLAGS) -o $@ $^
+	$(CC) -lrt -lm $(CFLAGS) -o $@ $^
 
 %_thr: atomicio.o test.o xutil.o %_thr.o
-	$(CC) -lm $(CFLAGS) -o $@ $^
+	$(CC) -lrt -lm $(CFLAGS) -o $@ $^
 
 #shm: CFLAGS += -lrt
 
