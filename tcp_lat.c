@@ -74,8 +74,8 @@ run_child(test_data *td)
   if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(int)) == -1)
     err(1, "setsockopt");
     
-  if (bind(sockfd, res->ai_addr, res->ai_addrlen) == -1)
-    err(1, "bind");
+  while (bind(sockfd, res->ai_addr, res->ai_addrlen) == -1)
+    { }
     
   if (listen(sockfd, 1) == -1)
     err(1, "listen");
