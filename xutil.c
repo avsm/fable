@@ -304,7 +304,6 @@ print_summary_stats(const struct summary_stats *ss)
 void
 summarise_tsc_counters(unsigned long *counts, int nr_samples)
 {
-  FILE *f;
   double *times = xmalloc(sizeof(times[0]) * nr_samples);
   double clock_freq = get_tsc_freq();
   struct summary_stats whole_dist_stats;
