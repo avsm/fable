@@ -45,11 +45,11 @@
 void
 run_test(int argc, char *argv[], test_t *test)
 { 
-  bool per_iter_timings, separate_cpu;
+  bool per_iter_timings, second_cpu;
   size_t count;
   int size, parallel;
   pid_t pid;
-  parse_args(argc, argv, &per_iter_timings, &size, &count, &separate_cpu, &parallel);
+  parse_args(argc, argv, &per_iter_timings, &size, &count, &second_cpu, &parallel);
   while (parallel > 0) {
     pid_t pid1 = fork ();
     if (!pid1) { /* child1 */
@@ -68,8 +68,7 @@ run_test(int argc, char *argv[], test_t *test)
         test->run_child(td);
         exit (0);
       } else { /* parent2 */
-        int a = separate_cpu ? 1 : 0;
-        setaffinity(a);
+        setaffinity(second_cpu);
         test->run_parent(td);
         exit (0);
       }

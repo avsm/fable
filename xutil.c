@@ -249,9 +249,9 @@ summarise_tsc_counters(unsigned long *counts, int nr_samples)
 static void
 help(char *argv[])
 {
-  fprintf(stderr, "Usage:\n%s [-h] [-2] [-p <num] [-t] [-s <bytes>] [-c <num>]\n", argv[0]);
+  fprintf(stderr, "Usage:\n%s [-h] [-a <cpuid>] [-p <num] [-t] [-s <bytes>] [-c <num>]\n", argv[0]);
   fprintf(stderr, "-h: show this help message\n");
-  fprintf(stderr, "-2: force one of the processes onto a separate CPU\n");
+  fprintf(stderr, "-a: CPU id that the second process should have affinity with\n");
   fprintf(stderr, "-p: number of parallel tests to run\n");
   fprintf(stderr, "-t: use high-res TSC to get more accurate results\n");
   fprintf(stderr, "-s: Size of each packet\n");
@@ -260,15 +260,15 @@ help(char *argv[])
 }
  
 void
-parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, bool *separate_cpu, int *parallel)
+parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, int *second_cpu, int *parallel)
 {
   int opt;
   *per_iter_timings = false;
-  *separate_cpu = false;
+  *second_cpu = false;
   *parallel = 1;
   *size = 1024;
   *count = 100;
-  while((opt = getopt(argc, argv, "h?tp:2s:c:")) != -1) {
+  while((opt = getopt(argc, argv, "h?tp:a:s:c:")) != -1) {
     switch(opt) {
      case 't':
       *per_iter_timings = true;
@@ -276,8 +276,8 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
      case 'p':
       *parallel = atoi(optarg);
       break;
-     case '2':
-      *separate_cpu = true;
+     case 'a':
+      *second_cpu = atoi(optarg);
       break;
      case 's':
       *size = atoi(optarg);
@@ -293,7 +293,7 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       help(argv);
     }
   }
-  fprintf(stderr, "size %d count %" PRId64 " separate_cpu %d parallel %d tsc %d\n", *size, *count, *separate_cpu, *parallel, *per_iter_timings);
+  fprintf(stderr, "size %d count %" PRId64 " second_cpu %d parallel %d tsc %d\n", *size, *count, *second_cpu, *parallel, *per_iter_timings);
 }
 
 void
