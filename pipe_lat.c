@@ -75,7 +75,6 @@ run_parent(test_data *td)
 {
   pipe_state *ps = (pipe_state *)td->data;
   void *buf = xmalloc(td->size);
-  int i;
 
   latency_test("pipe_lat",
     do {

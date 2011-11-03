@@ -71,7 +71,6 @@ run_parent(test_data *td)
 {
   test_state *ts = (test_state *)td->data;
   void *buf = xmalloc(td->size);
-  int i;
 
   thr_test("unix_thr",
     do {

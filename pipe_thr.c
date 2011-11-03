@@ -71,7 +71,6 @@ run_parent(test_data *td)
 {
   pipe_state *ps = (pipe_state *)td->data;
   void *buf = xmalloc(td->size);
-  int i;
 
   thr_test("pipe_thr",
     do {

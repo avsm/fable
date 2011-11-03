@@ -72,7 +72,6 @@ run_parent(test_data *td)
 {
   test_state *ts = (test_state *)td->data;
   void *buf = xmalloc(td->size);
-  int i;
 
   latency_test("unix_lat",
     do {

@@ -24,6 +24,7 @@
 */
 
 #include <stdbool.h>
+#include <stdio.h>
 
 void * xmalloc(size_t);
 void xread(int, void *, size_t);
@@ -49,7 +50,8 @@ void summarise_tsc_counters(unsigned long *counts, int nr_samples);
     struct timeval stop;						\
     unsigned long *iter_cycles;						\
     unsigned long delta;						\
-									\
+    int i;								\
+    									\
     /* calm compiler */							\
     iter_cycles = NULL;							\
 									\
