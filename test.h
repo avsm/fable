@@ -23,7 +23,10 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <stdio.h>
+
 typedef struct {
+  FILE *logfile;
   int num;
   int size;
   size_t count;
@@ -48,7 +51,7 @@ rdtsc(void)
 	       );
   return (d << 32) | a;
 }
-void summarise_tsc_counters(unsigned long *counts, int nr_samples);
+void summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples);
 
 #define lat_or_thr_test(is_lat, name, body, td)				\
   do {									\
@@ -85,15 +88,17 @@ void summarise_tsc_counters(unsigned long *counts, int nr_samples);
 	     stop.tv_usec - start.tv_usec);				\
 									\
     if (is_lat)								\
-      printf("%s %d %" PRId64 " %f\n", name, td->size, td->count,	\
-	     delta / (td->count * 1e6));				\
+      fprintf(td->logfile,						\
+	      "%s %d %" PRId64 " %f\n", name, td->size, td->count,	\
+	      delta / (td->count * 1e6));				\
     else								\
-      printf("%s %d %" PRId64 " %" PRId64 "\n", name, td->size,		\
-	     td->count,							\
-	     ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); \
+      fprintf(td->logfile,						\
+	      "%s %d %" PRId64 " %" PRId64 "\n", name, td->size,	\
+	      td->count,						\
+	      ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); \
 									\
     if (td->per_iter_timings)						\
-      summarise_tsc_counters(iter_cycles, td->count);			\
+      summarise_tsc_counters(td->logfile, iter_cycles, td->count);	\
   } while (0)
 
 #define latency_test(name, body, td)				        \

@@ -49,7 +49,8 @@ run_test(int argc, char *argv[], test_t *test)
   size_t count;
   int size, parallel;
   pid_t pid;
-  parse_args(argc, argv, &per_iter_timings, &size, &count, &separate_cpu, &parallel);
+  char *output_dir;
+  parse_args(argc, argv, &per_iter_timings, &size, &count, &separate_cpu, &parallel, &output_dir);
   while (parallel > 0) {
     pid_t pid1 = fork ();
     if (!pid1) { /* child1 */
@@ -64,13 +65,26 @@ run_test(int argc, char *argv[], test_t *test)
       test->init_test(td); 
       pid_t pid2 = fork ();
       if (!pid2) { /* child2 */
+	/* Discourage child from writing to log file by not setting
+	   td->logfile. */
         setaffinity(0);
         test->run_child(td);
         exit (0);
       } else { /* parent2 */
         int a = separate_cpu ? 1 : 0;
+	char *logpath;
+	if (asprintf(&logpath, "%s/%d.log", output_dir, parallel) < 0)
+	  err(1, "asprintf()");
+	td->logfile = fopen(logpath, "w");
+	if (!td->logfile)
+	  err(1, "cannot open %s", logpath);
+	free(logpath);
+
         setaffinity(a);
         test->run_parent(td);
+
+	fclose(td->logfile);
+
         exit (0);
       }
     } else { /* parent */ 

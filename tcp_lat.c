@@ -95,7 +95,7 @@ static void
 run_parent(test_data *td)
 {
   struct addrinfo *res = (struct addrinfo *)td->data;
-  int sockfd, i;
+  int sockfd;
   void *buf = xmalloc(td->size);
   sleep(1); 
   if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)

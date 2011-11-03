@@ -267,24 +267,24 @@ point_to_percentile(const struct summary_stats *ss, double point)
 }
 
 static void
-print_summary_stats(const struct summary_stats *ss)
+print_summary_stats(FILE *f, const struct summary_stats *ss)
 {
   double sd_percentiles[7];
   int i;
 
-  printf("\tMean %e, sample sd %e, sample skew %e, sample kurtosis %e\n",
-	 ss->mean, ss->sample_sd, ss->sample_skew, ss->sample_kurtosis);
-  printf("\tQuintiles: %e, %e, %e, %e, %e, %e\n",
-	 ss->data[0],
-	 ss->data[ss->nr_items / 5],
-	 ss->data[ss->nr_items * 2 / 5],
-	 ss->data[ss->nr_items * 3 / 5],
-	 ss->data[ss->nr_items * 4 / 5],
-	 ss->data[ss->nr_items - 1]);
-  printf("\t5%% %e, median %e, 95%% %e\n",
-	 ss->data[ss->nr_items / 20],
-	 ss->data[ss->nr_items / 2],
-	 ss->data[ss->nr_items * 19 / 20]);
+  fprintf(f, "\tMean %e, sample sd %e, sample skew %e, sample kurtosis %e\n",
+	  ss->mean, ss->sample_sd, ss->sample_skew, ss->sample_kurtosis);
+  fprintf(f, "\tQuintiles: %e, %e, %e, %e, %e, %e\n",
+	  ss->data[0],
+	  ss->data[ss->nr_items / 5],
+	  ss->data[ss->nr_items * 2 / 5],
+	  ss->data[ss->nr_items * 3 / 5],
+	  ss->data[ss->nr_items * 4 / 5],
+	  ss->data[ss->nr_items - 1]);
+  fprintf(f, "\t5%% %e, median %e, 95%% %e\n",
+	  ss->data[ss->nr_items / 20],
+	  ss->data[ss->nr_items / 2],
+	  ss->data[ss->nr_items * 19 / 20]);
 
   /* Also look at how deltas from the mean, in multiples of the SD,
      map onto percentiles, to get more hints about non-normality. */
@@ -292,18 +292,18 @@ print_summary_stats(const struct summary_stats *ss)
     double point = ss->mean + ss->sample_sd * (i - 3);
     sd_percentiles[i] = point_to_percentile(ss, point);
   }
-  printf("\tSD percentiles: -3 -> %f%%, -2 -> %f%%, -1 -> %f%%, 0 -> %f%%, 1 -> %f%%, 2 -> %f%%, 3 -> %f%%\n",
-	 sd_percentiles[0],
-	 sd_percentiles[1],
-	 sd_percentiles[2],
-	 sd_percentiles[3],
-	 sd_percentiles[4],
-	 sd_percentiles[5],
-	 sd_percentiles[6]);
+  fprintf(f, "\tSD percentiles: -3 -> %f%%, -2 -> %f%%, -1 -> %f%%, 0 -> %f%%, 1 -> %f%%, 2 -> %f%%, 3 -> %f%%\n",
+	  sd_percentiles[0],
+	  sd_percentiles[1],
+	  sd_percentiles[2],
+	  sd_percentiles[3],
+	  sd_percentiles[4],
+	  sd_percentiles[5],
+	  sd_percentiles[6]);
 }
 
 void
-summarise_tsc_counters(unsigned long *counts, int nr_samples)
+summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples)
 {
   double *times = xmalloc(sizeof(times[0]) * nr_samples);
   double clock_freq = get_tsc_freq();
@@ -324,23 +324,25 @@ summarise_tsc_counters(unsigned long *counts, int nr_samples)
   for (i = 0; i < nr_samples; i++)
     times[i] = counts[i] / clock_freq;
 
-  printf("By tenths of total run:\n");
-  for (i = 0; i < 10; i++) {
-    struct summary_stats stats;
-    int start = (nr_samples * i) / 10;
-    int end = (nr_samples * (i+1)) / 10;
-    qsort(times + start, end - start, sizeof(times[0]), compare_double);
-    calc_summary_stats(times + start, end - start, &stats);
-    printf("Slice %d/10:\n", i);
-    print_summary_stats(&stats);
+  if (nr_samples >= 30) {
+    fprintf(f, "By tenths of total run:\n");
+    for (i = 0; i < 10; i++) {
+      struct summary_stats stats;
+      int start = (nr_samples * i) / 10;
+      int end = (nr_samples * (i+1)) / 10;
+      qsort(times + start, end - start, sizeof(times[0]), compare_double);
+      calc_summary_stats(times + start, end - start, &stats);
+      fprintf(f, "Slice %d/10:\n", i);
+      print_summary_stats(f, &stats);
+    }
   }
 
   qsort(times, nr_samples, sizeof(times[0]), compare_double);
 
   calc_summary_stats(times, nr_samples, &whole_dist_stats);
 
-  printf("Distribution of all values:\n");
-  print_summary_stats(&whole_dist_stats);
+  fprintf(f, "Distribution of all values:\n");
+  print_summary_stats(f, &whole_dist_stats);
 
 #define OUTLIER 10
   low_thresh = nr_samples / OUTLIER;
@@ -348,20 +350,22 @@ summarise_tsc_counters(unsigned long *counts, int nr_samples)
 #undef OUTLIER
   if (low_thresh >= high_thresh ||
       low_thresh == 0 ||
-      high_thresh == nr_samples)
+      high_thresh == nr_samples) {
+    free(times);
     return;
+  }
   calc_summary_stats(times, low_thresh, &low_outliers);
   calc_summary_stats(times + low_thresh, high_thresh - low_thresh, &excl_outliers);
   calc_summary_stats(times + high_thresh, nr_samples - high_thresh, &high_outliers);
 
-  printf("Low outliers:\n");
-  print_summary_stats(&low_outliers);
+  fprintf(f, "Low outliers:\n");
+  print_summary_stats(f, &low_outliers);
 
-  printf("Bulk distribution:\n");
-  print_summary_stats(&excl_outliers);
+  fprintf(f, "Bulk distribution:\n");
+  print_summary_stats(f, &excl_outliers);
 
-  printf("High outliers:\n");
-  print_summary_stats(&high_outliers);
+  fprintf(f, "High outliers:\n");
+  print_summary_stats(f, &high_outliers);
 
   free(times);
 }
@@ -369,18 +373,20 @@ summarise_tsc_counters(unsigned long *counts, int nr_samples)
 static void
 help(char *argv[])
 {
-  fprintf(stderr, "Usage:\n%s [-h] [-2] [-p <num] [-t] [-s <bytes>] [-c <num>]\n", argv[0]);
+  fprintf(stderr, "Usage:\n%s [-h] [-2] [-p <num] [-t] [-s <bytes>] [-c <num>] [-o <directory>]\n", argv[0]);
   fprintf(stderr, "-h: show this help message\n");
   fprintf(stderr, "-2: force one of the processes onto a separate CPU\n");
   fprintf(stderr, "-p: number of parallel tests to run\n");
   fprintf(stderr, "-t: use high-res TSC to get more accurate results\n");
   fprintf(stderr, "-s: Size of each packet\n");
   fprintf(stderr, "-c: Number of iterations\n");
+  fprintf(stderr, "-o: Where to put the various output files\n");
   exit(1);
 }
- 
+
 void
-parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, bool *separate_cpu, int *parallel)
+parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, bool *separate_cpu, int *parallel,
+	   char **output_dir)
 {
   int opt;
   *per_iter_timings = false;
@@ -388,7 +394,8 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
   *parallel = 1;
   *size = 1024;
   *count = 100;
-  while((opt = getopt(argc, argv, "h?tp:2s:c:")) != -1) {
+  *output_dir = "results";
+  while((opt = getopt(argc, argv, "h?tp:2s:c:o:")) != -1) {
     switch(opt) {
      case 't':
       *per_iter_timings = true;
@@ -405,6 +412,9 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
      case 'c':
       *count = atoi(optarg);
       break;
+     case 'o':
+      *output_dir = optarg;
+      break;
      case '?':
      case 'h':
       help(argv);
@@ -413,7 +423,8 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       help(argv);
     }
   }
-  fprintf(stderr, "size %d count %" PRId64 " separate_cpu %d parallel %d tsc %d\n", *size, *count, *separate_cpu, *parallel, *per_iter_timings);
+  fprintf(stderr, "size %d count %" PRId64 " separate_cpu %d parallel %d tsc %d output_dir %s\n",
+	  *size, *count, *separate_cpu, *parallel, *per_iter_timings, *output_dir);
 }
 
 void

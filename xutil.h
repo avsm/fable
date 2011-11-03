@@ -31,5 +31,6 @@ void xread(int, void *, size_t);
 void xwrite(int, const void *, size_t);
 
 void setaffinity(int);
-void parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, bool *separate_cpu, int *parallel);
+void parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count,
+		bool *separate_cpu, int *parallel, char **output_dir);
 
