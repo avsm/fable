@@ -373,9 +373,10 @@ summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples)
 static void
 help(char *argv[])
 {
-  fprintf(stderr, "Usage:\n%s [-h] [-2] [-p <num] [-t] [-s <bytes>] [-c <num>] [-o <directory>]\n", argv[0]);
+  fprintf(stderr, "Usage:\n%s [-h] [-a <cpuid>] [-b <cpuid>] [-p <num] [-t] [-s <bytes>] [-c <num>] [-o <directory>]\n", argv[0]);
   fprintf(stderr, "-h: show this help message\n");
-  fprintf(stderr, "-2: force one of the processes onto a separate CPU\n");
+  fprintf(stderr, "-a: CPU id that the first process should have affinity with\n");
+  fprintf(stderr, "-b: CPU id that the second process should have affinity with\n");
   fprintf(stderr, "-p: number of parallel tests to run\n");
   fprintf(stderr, "-t: use high-res TSC to get more accurate results\n");
   fprintf(stderr, "-s: Size of each packet\n");
@@ -385,17 +386,18 @@ help(char *argv[])
 }
 
 void
-parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, bool *separate_cpu, int *parallel,
-	   char **output_dir)
+parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, int *first_cpu, int *second_cpu,
+	   int *parallel, char **output_dir)
 {
   int opt;
   *per_iter_timings = false;
-  *separate_cpu = false;
+  *first_cpu = 0;
+  *second_cpu = 0;
   *parallel = 1;
   *size = 1024;
   *count = 100;
   *output_dir = "results";
-  while((opt = getopt(argc, argv, "h?tp:2s:c:o:")) != -1) {
+  while((opt = getopt(argc, argv, "h?tp:a:b:s:c:o:")) != -1) {
     switch(opt) {
      case 't':
       *per_iter_timings = true;
@@ -403,8 +405,11 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
      case 'p':
       *parallel = atoi(optarg);
       break;
-     case '2':
-      *separate_cpu = true;
+     case 'a':
+      *first_cpu = atoi(optarg);
+      break;
+     case 'b':
+      *second_cpu = atoi(optarg);
       break;
      case 's':
       *size = atoi(optarg);
@@ -423,8 +428,9 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       help(argv);
     }
   }
-  fprintf(stderr, "size %d count %" PRId64 " separate_cpu %d parallel %d tsc %d output_dir %s\n",
-	  *size, *count, *separate_cpu, *parallel, *per_iter_timings, *output_dir);
+  fprintf(stderr, "size %d count %" PRId64 " first_cpu %d second_cpu %d parallel %d tsc %d output_dir %s\n",
+	  *size, *count, *first_cpu, *second_cpu, *parallel, *per_iter_timings,
+	  *output_dir);
 }
 
 void
