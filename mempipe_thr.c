@@ -42,43 +42,28 @@ init_test(test_data *td)
   td->data = establish_shm_segment(NR_SHARED_PAGES);
 }
 
-/* Simple function to read memory and pretty much discard it.  Works
-   because we know that the memory contains all 0xaa. */
 static void
-read_memory(const void *data, unsigned size)
-{
-  if (memchr(data, 0xbb, size))
-    err(1, "Received message was corrupted?");
-}
-
-/* Write nonsense to memory. */
-static void
-write_memory(void *data, unsigned size)
-{
-  memset(data, 0xaa, size);
-}
-
-static void
-consume_message(const void *data, unsigned long offset, unsigned size)
+consume_message(const void *data, unsigned long offset, unsigned size,
+		void *outbuf)
 {
   offset %= RING_SIZE;
   if (offset + size <= RING_SIZE) {
-    read_memory(data + offset, size);
+    memcpy(outbuf, data + offset, size);
   } else {
-    read_memory(data + offset, RING_SIZE - offset);
-    read_memory(data, size - (RING_SIZE - offset));
+    memcpy(outbuf, data + offset, RING_SIZE - offset);
+    memcpy(outbuf + RING_SIZE - offset, data, size - (RING_SIZE - offset));
   }
 }
 
 static void
-populate_message(void *data, unsigned long offset, unsigned size)
+populate_message(void *data, unsigned long offset, unsigned size, const void *inbuf)
 {
   offset %= RING_SIZE;
   if (offset + size <= RING_SIZE) {
-    write_memory(data + offset, size);
+    memcpy(data + offset, inbuf, size);
   } else {
-    write_memory(data + offset, RING_SIZE - offset);
-    write_memory(data, size - (RING_SIZE - offset));
+    memcpy(data + offset, inbuf, RING_SIZE - offset);
+    memcpy(data, inbuf + (RING_SIZE - offset), size - (RING_SIZE - offset));
   }
 }
 
@@ -88,6 +73,7 @@ run_child(test_data *td)
   unsigned long next_message_start;
   volatile struct msg_header *mh = td->data;
   int sz;
+  char *buf = xmalloc(td->size);
 
   /* Sync up with parent */
   mh->size = 0xf001;
@@ -104,7 +90,8 @@ run_child(test_data *td)
     if (sz == 1) /* End of test; normal messages are multiples of
 		    cache line size. */
       break;
-    consume_message(td->data, next_message_start + sizeof(struct msg_header), sz);
+    assert(sz == td->size);
+    consume_message(td->data, next_message_start + sizeof(struct msg_header), sz, buf);
     mh->size = -sz;
     next_message_start += sz + sizeof(struct msg_header);
   }
@@ -116,6 +103,7 @@ run_parent(test_data *td)
   volatile struct msg_header *mh = td->data;
   unsigned long next_tx_offset;
   unsigned long first_unacked_msg;
+  char *buf = xmalloc(td->size);
 
   assert(td->size < RING_SIZE - sizeof(struct msg_header));
 
@@ -147,7 +135,7 @@ run_parent(test_data *td)
       }
       /* Send message */
       mh = td->data + (next_tx_offset % RING_SIZE);
-      populate_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size);
+      populate_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size, buf);
       mh->size = td->size;
       next_tx_offset += td->size + sizeof(struct msg_header);
     } while(0),
