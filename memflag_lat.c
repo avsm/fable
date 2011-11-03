@@ -44,8 +44,6 @@ init_test(test_data *td)
   close(fd);
 
   td->data = addr;
-
-  printf("Mapped to %p\n", td->data);
 }
 
 static void
@@ -54,7 +52,7 @@ run_child(test_data *td)
   volatile struct shared_page *sp = td->data;
   int i;
 
-  for (i = 0; i < td->count; i++) {
+  for (i = 0; i <= td->count; i++) {
     sp->flag1 = 1;
     while (!sp->flag2)
       ;
@@ -86,14 +84,12 @@ run_parent(test_data *td)
     } while (0),
     td
   );
-
-  printf("Done test\n");
 }
 
 int
 main(int argc, char *argv[])
 {
-  test_t t = { init_test, run_child, run_parent };
+  test_t t = { init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }
