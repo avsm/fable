@@ -30,7 +30,7 @@ void xread(int, void *, size_t);
 void xwrite(int, const void *, size_t);
 
 void setaffinity(int);
-void parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, int *second_cpu, int *parallel);
+void parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, int *first_cpu, int *second_cpu, int *parallel);
 
 static inline unsigned long
 rdtsc(void)
