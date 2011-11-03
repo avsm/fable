@@ -64,6 +64,7 @@ run_child(test_data *td)
   for (i = 0; i < td->count; i++) {
     xread(ts->sv[1], buf, td->size);
   }
+  xwrite(ts->sv[1], "X", 1);
 }
 
 static void
@@ -76,7 +77,9 @@ run_parent(test_data *td)
     do {
       xwrite(ts->sv[0], buf, td->size); 
     } while (0),
-    do {} while (0),
+    do {
+      xread(ts->sv[0], buf, 1);
+    } while (0),
     td
   );
 }
