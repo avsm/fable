@@ -218,6 +218,35 @@ print_summary_stats(const struct summary_stats *ss)
 }
 
 static void
+linear_regression(const double *data, int nr_samples, double *alpha, double *beta)
+{
+  double x_bar;
+  double x_bar2;
+  double x_y_bar;
+  double y_bar;
+  int i;
+
+  x_y_bar = 0;
+
+  for (i = 0; i < nr_samples; i++) {
+    x_y_bar += data[i] * (i + 1);
+    y_bar += data[i];
+  }
+  x_y_bar /= nr_samples;
+  y_bar /= nr_samples;
+
+  x_bar = nr_samples / 2.0 + 1;
+  x_bar2 = (nr_samples + 2.0) * (2.0 * nr_samples + 1) / 6.0;
+
+  *beta = (x_y_bar - x_bar * y_bar) / (x_bar2 - x_bar * x_bar);
+  *alpha = y_bar - *beta * x_bar;
+
+  /* Norm so that xs run from 0 to 1, rather than from 0 to
+     nr_samples, because that's a bit easier to think about. */
+  *beta *= nr_samples;
+}
+
+static void
 summarise_samples(double *data, int nr_samples)
 {
   struct summary_stats whole_dist_stats;
@@ -227,12 +256,16 @@ summarise_samples(double *data, int nr_samples)
   int i;
   int low_thresh, high_thresh;
   int discard;
+  double alpha, beta;
 
   /* Discard the first few samples, so as to avoid startup
      transients. */
   discard = nr_samples / 20;
   data += discard;
   nr_samples -= discard;
+
+  linear_regression(data, nr_samples, &alpha, &beta);
+  printf("Linear regression: y = %e*x + %e\n", beta, alpha);
 
   if (nr_samples >= 30) {
     printf("By tenths of total run:\n");
