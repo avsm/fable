@@ -227,6 +227,7 @@ linear_regression(const double *data, int nr_samples, double *alpha, double *bet
   int i;
 
   x_y_bar = 0;
+  y_bar = 0;
 
   for (i = 0; i < nr_samples; i++) {
     x_y_bar += data[i] * (i + 1);
