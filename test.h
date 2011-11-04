@@ -53,7 +53,7 @@ rdtsc(void)
 	       );
   return (d << 32) | a;
 }
-void summarise_tsc_counters(test_data *td, unsigned long *counts, int nr_samples);
+void dump_tsc_counters(test_data *td, unsigned long *counts, int nr_samples);
 
 void logmsg(test_data *td,
 	    const char *file,
@@ -109,7 +109,7 @@ void logmsg(test_data *td,
 	     ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); \
 									\
     if (td->per_iter_timings)						\
-      summarise_tsc_counters(td, iter_cycles, td->count);		\
+      dump_tsc_counters(td, iter_cycles, td->count);			\
   } while (0)
 
 #define latency_test(body, td)			                        \
