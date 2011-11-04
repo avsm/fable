@@ -73,7 +73,7 @@ run_parent(test_data *td)
   test_state *ts = (test_state *)td->data;
   void *buf = xmalloc(td->size);
 
-  thr_test("unix_thr",
+  thr_test(
     do {
       xwrite(ts->sv[0], buf, td->size); 
     } while (0),
@@ -87,7 +87,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { init_test, run_parent, run_child };
+  test_t t = { "unix_thr", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }

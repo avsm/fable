@@ -76,7 +76,7 @@ run_parent(test_data *td)
   pipe_state *ps = (pipe_state *)td->data;
   void *buf = xmalloc(td->size);
 
-  latency_test("pipe_lat",
+  latency_test(
     do {
       xwrite(ps->ifds[1], buf, td->size); 
       xread(ps->ofds[0], buf, td->size);
@@ -88,7 +88,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { init_test, run_parent, run_child };
+  test_t t = { "pipe_lat", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }

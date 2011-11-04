@@ -56,7 +56,6 @@ run_parent(test_data *td)
     ;
 
   latency_test(
-    "memflag_lat",
     do {
       sp->flag2 = 1;
       while (sp->flag1)
@@ -72,7 +71,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { init_test, run_parent, run_child };
+  test_t t = { "memflag_lat", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }

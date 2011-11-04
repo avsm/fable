@@ -72,7 +72,7 @@ run_parent(test_data *td)
   pipe_state *ps = (pipe_state *)td->data;
   void *buf = xmalloc(td->size);
 
-  thr_test("pipe_thr",
+  thr_test(
     do {
       xwrite(ps->fds[1], buf, td->size); 
     } while (0),
@@ -84,7 +84,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { init_test, run_parent, run_child };
+  test_t t = { "pipe_thr", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }

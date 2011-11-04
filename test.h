@@ -26,15 +26,17 @@
 #include <stdio.h>
 
 typedef struct {
-  FILE *logfile;
   int num;
   int size;
   size_t count;
   bool per_iter_timings;
   void *data;
+  const char *output_dir;
+  const char *name;
 } test_data;
 
 typedef struct {
+  const char *name;
   void (*init_test)(test_data *);
   void (*run_parent)(test_data *);
   void (*run_child)(test_data *);
@@ -51,9 +53,15 @@ rdtsc(void)
 	       );
   return (d << 32) | a;
 }
-void summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples);
+void summarise_tsc_counters(test_data *td, unsigned long *counts, int nr_samples);
 
-#define lat_or_thr_test(is_lat, name, body, finish, td)			\
+void logmsg(test_data *td,
+	    const char *file,
+	    const char *fmt,
+	    ...)
+  __attribute__((format (printf, 3, 4)));
+
+#define lat_or_thr_test(is_lat, body, finish, td)			\
   do {									\
     struct timeval start;						\
     struct timeval stop;						\
@@ -89,20 +97,22 @@ void summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples);
 	     stop.tv_usec - start.tv_usec);				\
 									\
     if (is_lat)								\
-      fprintf(td->logfile,						\
-	      "%s %d %" PRId64 " %fs\n", name, td->size, td->count,	\
-	      delta / (td->count * 1e6));				\
+      logmsg(td,							\
+	     "headline",						\
+	     "%s %d %" PRId64 " %fs\n", td->name, td->size, td->count,	\
+	     delta / (td->count * 1e6));				\
     else								\
-      fprintf(td->logfile,						\
-	      "%s %d %" PRId64 " %" PRId64 " Mbps\n", name, td->size,	\
-	      td->count,						\
-	      ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); \
+      logmsg(td,							\
+	     "headline",						\
+	     "%s %d %" PRId64 " %" PRId64 " Mbps\n", td->name, td->size, \
+	     td->count,							\
+	     ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); \
 									\
     if (td->per_iter_timings)						\
-      summarise_tsc_counters(td->logfile, iter_cycles, td->count);	\
+      summarise_tsc_counters(td, iter_cycles, td->count);		\
   } while (0)
 
-#define latency_test(name, body, td)				        \
-  lat_or_thr_test(1, name, body, do {} while (0), td)
-#define thr_test(name, body, finish, td)	                        \
-  lat_or_thr_test(0, name, body, finish, td)
+#define latency_test(body, td)			                        \
+  lat_or_thr_test(1, body, do {} while (0), td)
+#define thr_test(body, finish, td)	                                \
+  lat_or_thr_test(0, body, finish, td)

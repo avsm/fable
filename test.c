@@ -23,6 +23,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -52,6 +53,10 @@ run_test(int argc, char *argv[], test_t *test)
   pid_t pid;
   char *output_dir;
   parse_args(argc, argv, &per_iter_timings, &size, &count, &first_cpu, &second_cpu, &parallel, &output_dir);
+
+  if (mkdir(output_dir, 0755) < 0 && errno != EEXIST)
+    err(1, "creating directory %s", output_dir);
+
   while (parallel > 0) {
     pid_t pid1 = fork ();
     if (!pid1) { /* child1 */
@@ -70,19 +75,12 @@ run_test(int argc, char *argv[], test_t *test)
         test->run_child(td);
         exit (0);
       } else { /* parent2 */
-	char *logpath;
-	if (asprintf(&logpath, "%s/%d.log", output_dir, parallel) < 0)
-	  err(1, "asprintf()");
-	td->logfile = fopen(logpath, "w");
-	if (!td->logfile)
-	  err(1, "cannot open %s", logpath);
-	free(logpath);
-
+	td->output_dir = output_dir; /* Do this here because the child
+					isn't supposed to log
+					anything. */
+	td->name = test->name;
         setaffinity(second_cpu);
         test->run_parent(td);
-
-	fclose(td->logfile);
-
         exit (0);
       }
     } else { /* parent */ 

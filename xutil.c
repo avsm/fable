@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <math.h>
 #include <sched.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -304,8 +305,30 @@ print_summary_stats(FILE *f, const struct summary_stats *ss)
 	  sd_percentiles[6]);
 }
 
+static FILE *
+open_logfile(test_data *td, const char *file)
+{
+  char *path;
+  FILE *res;
+
+  assert(td->output_dir != NULL);
+
+  if (asprintf(&path,
+	       "%s/%02d-%s-%s.log",
+	       td->output_dir,
+	       td->num,
+	       td->name,
+	       file) < 0)
+    err(1, "asprintf()");
+  res = fopen(path, "a");
+  if (!res)
+    err(1, "fopen(%s)", path);
+  free(path);
+  return res;
+}
+
 void
-summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples)
+summarise_tsc_counters(test_data *td, unsigned long *counts, int nr_samples)
 {
   double *times = xmalloc(sizeof(times[0]) * nr_samples);
   double clock_freq = get_tsc_freq();
@@ -316,6 +339,9 @@ summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples)
   int i;
   int low_thresh, high_thresh;
   int discard;
+  FILE *f;
+
+  f = open_logfile(td, "tsc_summary");
 
   /* Discard the first few samples, so as to avoid startup
      transients. */
@@ -354,6 +380,7 @@ summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples)
       low_thresh == 0 ||
       high_thresh == nr_samples) {
     free(times);
+    fclose(f);
     return;
   }
   calc_summary_stats(times, low_thresh, &low_outliers);
@@ -370,6 +397,7 @@ summarise_tsc_counters(FILE *f, unsigned long *counts, int nr_samples)
   print_summary_stats(f, &high_outliers);
 
   free(times);
+  fclose(f);
 }
 
 static void
@@ -473,4 +501,23 @@ establish_shm_segment(int nr_pages)
   close(fd);
 
   return addr;
+}
+
+void
+logmsg(test_data *td, const char *file, const char *fmt, ...)
+{
+  FILE *f = open_logfile(td, file);
+  va_list args;
+  char *res;
+
+  va_start(args, fmt);
+  if (vasprintf(&res, fmt, args) < 0)
+    err(1, "vasprintf(%s)", fmt);
+  va_end(args);
+
+  if (fputs(res, f) == EOF)
+    err(1, "fputs(%s) to logfile:%s", res, file);
+
+  if (fclose(f) == EOF)
+    err(1, "fclose(logfile:%s)", file);
 }

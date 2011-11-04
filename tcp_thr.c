@@ -102,7 +102,7 @@ run_parent(test_data *td)
   if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
     err(1, "connect");
 
-  thr_test("tcp_thr",
+  thr_test(
     do {
       xwrite(sockfd, buf, td->size);
     } while (0),
@@ -114,7 +114,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { init_test, run_parent, run_child };
+  test_t t = { "tcp_thr", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }

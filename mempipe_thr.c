@@ -119,7 +119,7 @@ run_parent(test_data *td)
   td->size = td->size + CACHE_LINE_SIZE - 1;
   td->size -= td->size % CACHE_LINE_SIZE;
 
-  thr_test("mempipe_thr",
+  thr_test(
     do {
       /* Check for available ring space (eom = end of message) */
       unsigned long eom = next_tx_offset + td->size + sizeof(struct msg_header);
@@ -160,7 +160,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { init_test, run_parent, run_child };
+  test_t t = { "mempipe_thr", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }

@@ -104,7 +104,7 @@ run_parent(test_data *td)
   if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
     err(1, "connect");
 
-  latency_test("tcp_test",
+  latency_test(
     do {
       xwrite(sockfd, buf, td->size);
       xread(sockfd, buf, td->size);
@@ -116,7 +116,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { init_test, run_parent, run_child };
+  test_t t = { "tcp_lat", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }
