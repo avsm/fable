@@ -28,42 +28,48 @@
 
 #define PAGE_SIZE 4096
 #define CACHE_LINE_SIZE 64
-#define NR_SHARED_PAGES 512
-#define RING_SIZE (PAGE_SIZE * NR_SHARED_PAGES)
+static unsigned nr_shared_pages = 512;
+#define ring_size (PAGE_SIZE * nr_shared_pages)
 
 struct msg_header {
   int size;
   int pad[CACHE_LINE_SIZE / sizeof(int) - 1];
 };
 
+static unsigned long
+mask_ring_index(unsigned long idx)
+{
+  return idx & (ring_size - 1);
+}
+
 static void
 init_test(test_data *td)
 {
-  td->data = establish_shm_segment(NR_SHARED_PAGES);
+  td->data = establish_shm_segment(nr_shared_pages);
 }
 
 static void
 consume_message(const void *data, unsigned long offset, unsigned size,
 		void *outbuf)
 {
-  offset %= RING_SIZE;
-  if (offset + size <= RING_SIZE) {
+  offset = mask_ring_index(offset);
+  if (offset + size <= ring_size) {
     memcpy(outbuf, data + offset, size);
   } else {
-    memcpy(outbuf, data + offset, RING_SIZE - offset);
-    memcpy(outbuf + RING_SIZE - offset, data, size - (RING_SIZE - offset));
+    memcpy(outbuf, data + offset, ring_size - offset);
+    memcpy(outbuf + ring_size - offset, data, size - (ring_size - offset));
   }
 }
 
 static void
 populate_message(void *data, unsigned long offset, unsigned size, const void *inbuf)
 {
-  offset %= RING_SIZE;
-  if (offset + size <= RING_SIZE) {
+  offset = mask_ring_index(offset);
+  if (offset + size <= ring_size) {
     memcpy(data + offset, inbuf, size);
   } else {
-    memcpy(data + offset, inbuf, RING_SIZE - offset);
-    memcpy(data, inbuf + (RING_SIZE - offset), size - (RING_SIZE - offset));
+    memcpy(data + offset, inbuf, ring_size - offset);
+    memcpy(data, inbuf + (ring_size - offset), size - (ring_size - offset));
   }
 }
 
@@ -83,7 +89,7 @@ run_child(test_data *td)
   next_message_start = 0;
   /* Enter main message loop */
   while (1) {
-    mh = td->data + (next_message_start % RING_SIZE);
+    mh = td->data + mask_ring_index(next_message_start);
     while (mh->size <= 0)
       ;
     sz = mh->size;
@@ -105,7 +111,7 @@ run_parent(test_data *td)
   unsigned long first_unacked_msg;
   char *buf = xmalloc(td->size);
 
-  assert(td->size < RING_SIZE - sizeof(struct msg_header));
+  assert(td->size < ring_size - sizeof(struct msg_header));
 
   /* Wait for child to show up. */
   while (mh->size != 0xf001)
@@ -123,9 +129,9 @@ run_parent(test_data *td)
     do {
       /* Check for available ring space (eom = end of message) */
       unsigned long eom = next_tx_offset + td->size + sizeof(struct msg_header);
-      while (eom - first_unacked_msg > RING_SIZE) {
+      while (eom - first_unacked_msg > ring_size) {
 	int size;
-	mh = td->data + (first_unacked_msg % RING_SIZE);
+	mh = td->data + mask_ring_index(first_unacked_msg);
 	do {
 	  size = mh->size;
 	} while (size > 0);
@@ -134,7 +140,7 @@ run_parent(test_data *td)
 	first_unacked_msg += -size + sizeof(struct msg_header);
       }
       /* Send message */
-      mh = td->data + (next_tx_offset % RING_SIZE);
+      mh = td->data + mask_ring_index(next_tx_offset);
       populate_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size, buf);
       mh->size = td->size;
       next_tx_offset += td->size + sizeof(struct msg_header);
@@ -143,7 +149,7 @@ run_parent(test_data *td)
       /* Wait for child to acknowledge receipt of all messages */
       while (first_unacked_msg != next_tx_offset) {
 	int size;
-	mh = td->data + (first_unacked_msg % RING_SIZE);
+	mh = td->data + mask_ring_index(first_unacked_msg);
 	do {
 	  size = mh->size;
 	} while (size > 0);
@@ -153,7 +159,7 @@ run_parent(test_data *td)
     td);
 
   /* Tell child to go away */
-  mh = td->data + (next_tx_offset % RING_SIZE);
+  mh = td->data + mask_ring_index(next_tx_offset);
   mh->size = 1;
 }
 
@@ -161,6 +167,15 @@ int
 main(int argc, char *argv[])
 {
   test_t t = { "mempipe_thr", init_test, run_parent, run_child };
+  char *ring_order = getenv("MEMPIPE_RING_ORDER");
+  if (ring_order) {
+    int as_int;
+    if (sscanf(ring_order, "%d", &as_int) != 1)
+      err(1, "MEMPIPE_RING_ORDER must be an integer");
+    if (as_int < 0 || as_int > 15)
+      errx(1, "MEMPIPE_RING_ORDER must be between 0 and 15");
+    nr_shared_pages = 1 << as_int;
+  }
   run_test(argc, argv, &t);
   return 0;
 }
