@@ -81,6 +81,11 @@ run_test(int argc, char *argv[], test_t *test)
 	td->name = test->name;
         setaffinity(second_cpu);
         test->run_parent(td);
+
+	/* Make sure the child really does go away when it's no longer
+	   needed. */
+	kill(pid2, 9);
+
         exit (0);
       }
     } else { /* parent */ 
