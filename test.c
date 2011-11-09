@@ -85,6 +85,10 @@ run_test(int argc, char *argv[], test_t *test)
 	/* Make sure the child really does go away when it's no longer
 	   needed. */
 	kill(pid2, 9);
+        while (waitpid(-1, NULL, 0)) {
+          if (errno == ECHILD)
+            break;
+        }
 
         exit (0);
       }
