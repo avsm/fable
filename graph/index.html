@@ -1,0 +1,89 @@
+<html>
+  <head>
+    <title></title>
+    <script type="text/javascript" src="jquery-1.7.min.js"></script>
+    <script type="text/javascript" src="protovis.js"></script>
+    <script type="text/javascript">var tests={};</script>
+    <script type="text/javascript" src="native48_all.js"></script>
+    <script type="text/javascript" src="xen48pin_all.js"></script>
+    <script type="text/javascript" src="xen48nopin_all.js"></script>
+    <style type="text/css">
+
+body {
+  margin: 0;
+  display: table;
+  height: 100%;
+  width: 100%;
+  font: 14px/134% Helvetica Neue, sans-serif;
+}
+
+#fig {
+  display: table-cell;
+  vertical-align: middle;
+  position: relative;
+  margin: auto;
+}
+    </style>
+  </head>
+  <body>
+<form id="options">
+<input type="radio" name="os" checked="true" value="native48" />linux48
+<input type="radio" name="os" value="xen48nopin" />xen48nopin
+<input type="radio" name="os" value="xen48pin" />xen48pin<br />
+<input type="radio" name="test" checked="true" value="tcp" />tcp
+<input type="radio" name="test" value="unix" />unix domain
+<input type="radio" name="test" value="pipe" />pipe
+<input type="radio" name="test" value="mempipe" />mempipe<br />
+<input type="radio" name="mode" checked="true" value="lat" />latency
+<input type="radio" name="mode" value="thr" />throughput<br />
+<input type="checkbox" id="norm" />remove same core <br />
+</form>
+<form id="stats">
+<input type="textbox" id="dmin" /> min
+<input type="textbox" id="dmax" /> max<br />
+</form>
+<div id="foo"></div>
+    <script type="text/javascript+protovis">
+function show_test() {
+  var opts = {};
+  $.each( $('#options').serializeArray(), function(i,o) {
+    var n = o.name,
+    v = o.value;
+        
+    opts[n] = opts[n] === undefined ? v
+      : $.isArray( opts[n] ) ? opts[n].concat(v)
+      : [ opts[n], v ];
+    });
+  var test_name=opts['os']+"_"+opts['test']+'_'+opts['mode'];
+  console.log(test_name);
+  var data = $.extend(true,[],tests[test_name]);
+  var dmax = pv.max(data.map(function (d) pv.max(d)));
+  var dmin = pv.min(data.map(function (d) pv.min(d)));
+  if ($('#norm').attr('checked')) {
+    $.each(data, function (rowidx, row) {
+      $.each(row, function (colidx, col) {
+        if (colidx == rowidx)
+          row[colidx] = dmin;
+      })
+    });
+    dmax = pv.max(data.map(function (d) pv.max(d)));
+  }
+ 
+  $('#dmax').val(dmax);
+  $('#dmin').val(dmin);
+  var vis = new pv.Panel().canvas("foo")
+    .width(300)
+    .height(300);
+  vis.add(pv.Layout.Grid)
+    .rows(data)
+      .cell.add(pv.Bar).
+       fillStyle(pv.Scale.linear()
+         .domain(dmin,dmax)
+         .range("yellow","red"));
+
+vis.render();
+}
+$('#options').change(function () { show_test(); });
+   </script>
+ </body>
+</html>
