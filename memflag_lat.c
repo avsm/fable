@@ -63,7 +63,7 @@ run_child(test_data *td)
   volatile struct shared_page *sp = td->data;
   int i;
 
-  for (i = 0; i <= td->count; i++) {
+  for (i = 0; i < td->count; i++) {
     sp->flag1 = 1;
     while (!sp->flag2)
       ;
