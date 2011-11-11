@@ -87,6 +87,7 @@ run_child(test_data *td)
 
   for (i = 0; i < td->count; i++) 
     xread(new_fd, buf, td->size);
+  xwrite(new_fd, "X", 1);
 }
 
 static void
@@ -106,7 +107,9 @@ run_parent(test_data *td)
     do {
       xwrite(sockfd, buf, td->size);
     } while (0),
-    do {} while (0),
+    do {
+      xread(sockfd, buf, 1);
+    } while (0),
     td
   );
 }
