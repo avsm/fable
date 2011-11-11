@@ -8,7 +8,7 @@ LDFLAGS+=-lm
 #	tcp_lat tcp_thr \
 #	tcp_local_lat tcp_remote_lat
 
-all: tcp_lat tcp_thr pipe_lat pipe_thr unix_lat unix_thr memflag_lat mempipe_thr summarise_tsc_counters
+all: tcp_lat tcp_thr pipe_lat pipe_thr unix_lat unix_thr memflag_lat mempipe_thr vmsplice_pipe_thr summarise_tsc_counters
 
 %_lat: atomicio.o test.o xutil.o %_lat.o
 	$(CC) -lrt $(CFLAGS) -o $@ $^
