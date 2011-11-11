@@ -43,6 +43,7 @@
 
 typedef struct {
   int fds[2];
+  int fin_fds[2];
 } pipe_state;
 
 static void
@@ -50,6 +51,8 @@ init_test(test_data *td)
 {
   pipe_state *ps = xmalloc(sizeof(pipe_state));
   if (pipe(ps->fds) == -1)
+    err(1, "pipe");
+  if (pipe(ps->fin_fds) == -1)
     err(1, "pipe");
   td->data = (void *)ps;
 }
@@ -64,6 +67,7 @@ run_child(test_data *td)
   for (i = 0; i < td->count; i++) {
     xread(ps->fds[0], buf, td->size);
   }
+  xwrite(ps->fin_fds[1], "X", 1);
 }
 
 static void
@@ -71,12 +75,13 @@ run_parent(test_data *td)
 {
   pipe_state *ps = (pipe_state *)td->data;
   void *buf = xmalloc(td->size);
-
   thr_test(
     do {
       xwrite(ps->fds[1], buf, td->size); 
     } while (0),
-    do {} while (0),
+    do {
+      xread(ps->fin_fds[0], buf, 1);
+    } while (0),
     td
   );
 }
