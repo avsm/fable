@@ -50,7 +50,6 @@ init_test(test_data *td)
   struct addrinfo hints;
   int port = 3490+td->num;
   snprintf(portbuf, sizeof portbuf, "%d", port);
-  fprintf(stderr, "pid %d init_test port %d\n", getpid(), port);
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
@@ -69,7 +68,6 @@ run_child(test_data *td)
   void *buf = xmalloc(td->size);
   int flag = 1;
 
-  fprintf(stderr, "run_child num %d size %d count % " PRId64 "\n", td->num, td->size, td->count);
   if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
     err(1, "socket");
 
