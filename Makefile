@@ -3,12 +3,7 @@ LDFLAGS+=-lm
 
 .PHONY: all clean run
 
-#all: pipe_lat pipe_thr \
-#	unix_lat unix_thr \
-#	tcp_lat tcp_thr \
-#	tcp_local_lat tcp_remote_lat
-
-all: tcp_lat tcp_thr pipe_lat pipe_thr unix_lat unix_thr memflag_lat mempipe_thr summarise_tsc_counters
+all: tcp_lat tcp_thr tcp_nodelay_thr tcp_nodelay_lat pipe_lat pipe_thr unix_lat unix_thr mempipe_lat mempipe_thr summarise_tsc_counters
 
 %_lat: atomicio.o test.o xutil.o %_lat.o
 	$(CC) -lrt $(CFLAGS) -o $@ $^
@@ -16,22 +11,10 @@ all: tcp_lat tcp_thr pipe_lat pipe_thr unix_lat unix_thr memflag_lat mempipe_thr
 %_thr: atomicio.o test.o xutil.o %_thr.o
 	$(CC) -lrt $(CFLAGS) -o $@ $^
 
-#shm: CFLAGS += -lrt
-
-run:
-	./pipe_lat 100 10000
-	./unix_lat 100 10000
-	./tcp_lat 100 10000
-	./pipe_thr 100 10000
-	./unix_thr 100 10000
-	./tcp_thr 100 10000
-
 clean:
 	rm -f *~ core
 	rm -f pipe_lat pipe_thr 
 	rm -f unix_lat unix_thr 
 	rm -f tcp_lat tcp_thr 
 	rm -f tcp_local_lat tcp_remote_lat
-	rm -f shm 
-	rm -f memflag_lat
-	rm -f mempipe_thr
+	rm -f mempipe_lat mempipe_thr

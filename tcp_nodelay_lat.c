@@ -34,6 +34,7 @@
 #include <inttypes.h>
 #include <netdb.h>
 
+#include <netinet/tcp.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
@@ -49,6 +50,7 @@ init_test(test_data *td)
   struct addrinfo hints;
   int port = 3490+td->num;
   snprintf(portbuf, sizeof portbuf, "%d", port);
+  fprintf(stderr, "pid %d init_test port %d\n", getpid(), port);
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
@@ -65,7 +67,9 @@ run_child(test_data *td)
   struct sockaddr_storage their_addr;
   socklen_t addr_size;
   void *buf = xmalloc(td->size);
- 
+  int flag = 1;
+
+  fprintf(stderr, "run_child num %d size %d count % " PRId64 "\n", td->num, td->size, td->count);
   if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
     err(1, "socket");
 
@@ -83,17 +87,22 @@ run_child(test_data *td)
   if ((new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &addr_size)) == -1)
     err(1, "accept");
 
-  for (i = 0; i < td->count; i++) 
+  if (setsockopt(new_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) == -1)
+    err(1, "setsockopt");
+
+  for (i = 0; i < td->count; i++) {
     xread(new_fd, buf, td->size);
-  xwrite(new_fd, "X", 1);
+    xwrite(new_fd, buf, td->size);
+  }
 }
 
 static void
 run_parent(test_data *td)
 {
   struct addrinfo *res = (struct addrinfo *)td->data;
-  int sockfd;
+  int sockfd, flag=1;
   void *buf = xmalloc(td->size);
+
   sleep(1); 
   if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
     err(1, "socket");
@@ -101,12 +110,13 @@ run_parent(test_data *td)
   if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
     err(1, "connect");
 
-  thr_test(
+  if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) == -1)
+    err(1, "setsockopt");
+
+  latency_test(
     do {
       xwrite(sockfd, buf, td->size);
-    } while (0),
-    do {
-      xread(sockfd, buf, 1);
+      xread(sockfd, buf, td->size);
     } while (0),
     td
   );
@@ -115,7 +125,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "tcp_thr", init_test, run_parent, run_child };
+  test_t t = { "tcp_nodelay_lat", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }

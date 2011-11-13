@@ -1,1 +1,4 @@
+*.o
+*_thr
+*_lat
 results

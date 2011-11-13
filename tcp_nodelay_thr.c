@@ -34,6 +34,8 @@
 #include <inttypes.h>
 #include <netdb.h>
 
+#include <netinet/tcp.h>
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
@@ -72,6 +74,9 @@ run_child(test_data *td)
   if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(int)) == -1)
     err(1, "setsockopt");
     
+  if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &i, sizeof(int)) == -1)
+    err(1, "setsockopt");
+
   while (bind(sockfd, res->ai_addr, res->ai_addrlen) == -1)
     { }
     
@@ -115,7 +120,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "tcp_thr", init_test, run_parent, run_child };
+  test_t t = { "tcp_nodelay_thr", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }

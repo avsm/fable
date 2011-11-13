@@ -99,7 +99,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "memflag_lat", init_test, run_parent, run_child };
+  test_t t = { "mempipe_lat", init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }

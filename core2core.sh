@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 
-OUT=corespp.csv
-SIZE=128
+SIZES="1 128 1024 4096 65536"
 COUNT=10000
-TESTS="pipe_thr pipe_lat tcp_thr tcp_lat unix_thr unix_lat mempipe_thr memflag_lat"
+THR_TESTS="pipe_thr tcp_thr unix_thr mempipe_thr tcp_nodelay_thr"
+LAT_TESTS="pipe_lat tcp_lat unix_lat mempipe_lat tcp_nodelay_lat"
+TESTS="${THR_TESTS} ${LAT_TESTS}"
 
 ODIR=results
 rm -rf ${ODIR}
 mkdir -p ${ODIR}
 
+for SIZE in ${SIZES}; do
 for c1 in {0..47..1}; do
   for c2 in {0..47..1}; do
     echo ${c1} to ${c2}
     for t in ${TESTS}; do
-      d="${ODIR}/${c1}-${c2}-${t}"
+      d="${ODIR}/${SIZE}/${c1}-${c2}-${t}"
       mkdir -p ${d}
       if [ ${c1} -eq ${c2} ]; then
-        count=1
+        count=100
       else
         count=${COUNT}
       fi
@@ -24,4 +26,4 @@ for c1 in {0..47..1}; do
     done
   done
 done
-
+done
