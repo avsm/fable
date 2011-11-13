@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-SIZES="1 128 1024 4096 65536"
+SIZES="128 4096 65536"
 COUNT=10000
-THR_TESTS="pipe_thr tcp_thr unix_thr mempipe_thr tcp_nodelay_thr"
+THR_TESTS="pipe_thr tcp_thr unix_thr mempipe_thr tcp_nodelay_thr vmsplice_pipe_thr"
 LAT_TESTS="pipe_lat tcp_lat unix_lat mempipe_lat tcp_nodelay_lat"
 TESTS="${THR_TESTS} ${LAT_TESTS}"
 
