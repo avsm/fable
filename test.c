@@ -52,7 +52,8 @@ run_test(int argc, char *argv[], test_t *test)
   int size, parallel;
   pid_t pid;
   char *output_dir;
-  parse_args(argc, argv, &per_iter_timings, &size, &count, &first_cpu, &second_cpu, &parallel, &output_dir);
+  int mode;
+  parse_args(argc, argv, &per_iter_timings, &size, &count, &first_cpu, &second_cpu, &parallel, &output_dir, &mode);
 
   if (mkdir(output_dir, 0755) < 0 && errno != EEXIST)
     err(1, "creating directory %s", output_dir);
@@ -67,6 +68,7 @@ run_test(int argc, char *argv[], test_t *test)
       td->size = size;
       td->count = count;
       td->per_iter_timings = per_iter_timings;
+      td->mode = mode;
       /* Test-specific init */
       test->init_test(td); 
       pid_t pid2 = fork ();

@@ -90,7 +90,7 @@ consume_message(const void *data, unsigned long offset, unsigned size,
 }
 
 static void
-populate_message(void *data, unsigned long offset, unsigned size, const void *inbuf)
+copy_message(void *data, unsigned long offset, unsigned size, const void *inbuf)
 {
   offset = mask_ring_index(offset);
   if (offset + size <= ring_size) {
@@ -98,6 +98,18 @@ populate_message(void *data, unsigned long offset, unsigned size, const void *in
   } else {
     memcpy(data + offset, inbuf, ring_size - offset);
     memcpy(data, inbuf + (ring_size - offset), size - (ring_size - offset));
+  }
+}
+
+static void
+set_message(void *data, unsigned long offset, unsigned size, int byte) 
+{
+  offset = mask_ring_index(offset);
+  if (offset + size <= ring_size) {
+    memset(data + offset, byte, size);
+  } else {
+    memset(data + offset, byte, ring_size - offset);
+    memset(data, byte, size - (ring_size - offset));
   }
 }
 
@@ -124,7 +136,10 @@ run_child(test_data *td)
     if (sz == 1) /* End of test; normal messages are multiples of
 		    cache line size. */
       break;
-    assert(sz == td->size);
+    if(sz != td->size) {
+      printf("%d %d %ld\n", sz, td->size, next_message_start);
+      assert(0);
+    }
     consume_message(td->data, next_message_start + sizeof(struct msg_header), sz, buf);
     mh->size = -sz;
     next_message_start += sz + sizeof(struct msg_header);
@@ -169,7 +184,14 @@ run_parent(test_data *td)
       }
       /* Send message */
       mh = td->data + mask_ring_index(next_tx_offset);
-      populate_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size, buf);
+      if(td->mode == MODE_DATAINPLACE) {
+	set_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size, i);
+      }
+      else {
+	if(td->mode == MODE_DATAEXT)
+	  memset(buf, i, td->size);
+	copy_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size, buf);
+      }
       mh->size = td->size;
       next_tx_offset += td->size + sizeof(struct msg_header);
     } while(0),

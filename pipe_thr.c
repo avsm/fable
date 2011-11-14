@@ -75,8 +75,16 @@ run_parent(test_data *td)
 {
   pipe_state *ps = (pipe_state *)td->data;
   void *buf = xmalloc(td->size);
+  void *buf2 = xmalloc(td->size);
   thr_test(
     do {
+      if(td->mode == MODE_DATAINPLACE) {
+	memset(buf, i, td->size);
+      }
+      else if(td->mode == MODE_DATAEXT) {
+	memset(buf2, i, td->size);
+	memcpy(buf, buf2, td->size);
+      }
       xwrite(ps->fds[1], buf, td->size); 
     } while (0),
     do {
