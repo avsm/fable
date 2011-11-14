@@ -76,6 +76,8 @@ run_child(test_data *td)
   xwrite(ps->fin_fds[1], "X", 1);
 }
 
+#define ALLOC_PAGES 512
+
 static void
 run_parent(test_data *td)
 {
@@ -83,18 +85,26 @@ run_parent(test_data *td)
   void *buf = xmalloc(td->size);
   struct iovec iov;
 
+  void* mapped = 0;
+  int write_offset = 0;
+
   thr_test(
     do {
-      void* to_munmap = 0;
       if(td->mode == MODE_NODATA) {
 	iov.iov_base = buf;
 	iov.iov_len = td->size;
       }
       else {
-	void* tosend = mmap(0, td->size, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-	if(tosend == MAP_FAILED)
-	  err(1, "mmap");
-	to_munmap = tosend;
+	if(!mapped || ((write_offset + td->size) > (ALLOC_PAGES * 4096))) {
+	  if(mapped)
+	    if(munmap(mapped, ALLOC_PAGES * 4096))
+	      err(1, "munmap");
+	  mapped = mmap(0, ALLOC_PAGES * 4096, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	  if(mapped == MAP_FAILED)
+	    err(1, "mmap");
+	  write_offset = 0;
+	}
+	void* tosend = mapped + write_offset;
 	if(td->mode == MODE_DATAINPLACE) {
 	  memset(tosend, i, td->size);
 	}
@@ -102,6 +112,7 @@ run_parent(test_data *td)
 	  memset(buf, i, td->size);
 	  memcpy(tosend, buf, td->size);
 	}
+	write_offset += td->size;
 	iov.iov_base = tosend;
 	iov.iov_len = td->size;
       }
@@ -114,9 +125,6 @@ run_parent(test_data *td)
 	iov.iov_len -= this_write;
 	iov.iov_base = ((char*)iov.iov_base) + this_write;
       }
-      if(to_munmap)
-	if(munmap(to_munmap, td->size))
-	  err(1, "munmap");
     } while(0),
     do {
       xread(ps->fin_fds[0], buf, 1);
