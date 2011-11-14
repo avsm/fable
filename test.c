@@ -83,11 +83,15 @@ run_test(int argc, char *argv[], test_t *test)
 	td->name = test->name;
         setaffinity(second_cpu);
         test->run_parent(td);
-        /* Wait for all the spawned tests to finish */
-        while ((pid = waitpid(-1, NULL, 0))) {
+
+	/* Make sure the child really does go away when it's no longer
+	   needed. */
+	kill(pid2, 9);
+        while (waitpid(-1, NULL, 0)) {
           if (errno == ECHILD)
             break;
         }
+
         exit (0);
       }
     } else { /* parent */ 
