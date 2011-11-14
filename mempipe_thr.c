@@ -135,6 +135,7 @@ static void
 run_parent(test_data *td)
 {
   volatile struct msg_header *mh = td->data;
+  volatile struct msg_header *mh2;
   unsigned long next_tx_offset;
   unsigned long first_unacked_msg;
   char *buf = xmalloc(td->size);
@@ -156,7 +157,7 @@ run_parent(test_data *td)
   thr_test(
     do {
       /* Check for available ring space (eom = end of message) */
-      unsigned long eom = next_tx_offset + td->size + sizeof(struct msg_header);
+      unsigned long eom = next_tx_offset + td->size + sizeof(struct msg_header) * 2;
       while (eom - first_unacked_msg > ring_size) {
 	int size;
 	mh = td->data + mask_ring_index(first_unacked_msg);
@@ -170,6 +171,15 @@ run_parent(test_data *td)
       /* Send message */
       mh = td->data + mask_ring_index(next_tx_offset);
       populate_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size, buf);
+
+      /* Make sure that the size field in the *next* message is clear
+	 before setting the size field in *this* message.  That makes
+	 sure that the receiver stops and spins in the right place,
+	 rather than wandering off into la-la land if it picks up a
+	 stale message. */
+      mh2 = td->data + mask_ring_index(next_tx_offset + td->size + sizeof(struct msg_header));
+      mh2->size = 0;
+
       mh->size = td->size;
       next_tx_offset += td->size + sizeof(struct msg_header);
     } while(0),
