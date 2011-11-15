@@ -59,6 +59,26 @@
 static unsigned nr_shared_pages = 512;
 #define ring_size (PAGE_SIZE * nr_shared_pages)
 
+#ifdef SOS22_MEMSET
+#define real_memset mymemset
+#define test_name "mempipe_thr_sos22"
+
+static void mymemset(void* buf, int byte, size_t count) {
+  int clobber;
+  assert(count % 8 == 0);
+  asm volatile ("rep stosq\n"
+		: "=c" (clobber)
+		: "a" ((unsigned long)(byte & 0xff) * 0x0101010101010101ul),
+		  "D" (buf),
+		  "0" (count / 8)
+		: "memory");
+}
+
+#else
+#define real_memset memset
+#define test_name "mempipe_thr"
+#endif
+
 struct msg_header {
   int size;
   int pad[CACHE_LINE_SIZE / sizeof(int) - 1];
@@ -106,10 +126,10 @@ set_message(void *data, unsigned long offset, unsigned size, int byte)
 {
   offset = mask_ring_index(offset);
   if (offset + size <= ring_size) {
-    memset(data + offset, byte, size);
+    real_memset(data + offset, byte, size);
   } else {
-    memset(data + offset, byte, ring_size - offset);
-    memset(data, byte, size - (ring_size - offset));
+    real_memset(data + offset, byte, ring_size - offset);
+    real_memset(data, byte, size - (ring_size - offset));
   }
 }
 
@@ -128,7 +148,8 @@ run_child(test_data *td)
 
   next_message_start = 0;
   /* Enter main message loop */
-  while (1) {
+  int i;
+  for (i = 0; ;i++) {
     mh = td->data + mask_ring_index(next_message_start);
     while (mh->size <= 0)
       ;
@@ -141,6 +162,15 @@ run_child(test_data *td)
       assert(0);
     }
     consume_message(td->data, next_message_start + sizeof(struct msg_header), sz, buf);
+    /*
+    int j;
+    for(j = 0; j < td->size; j++) {
+      if(buf[j] != (char)i) {
+	printf("Expected %u got %u at %d\n", i, buf[j], j);
+	assert(0);
+      }
+    }
+    */
     mh->size = -sz;
     next_message_start += sz + sizeof(struct msg_header);
   }
@@ -226,7 +256,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "mempipe_thr", init_test, run_parent, run_child };
+  test_t t = { test_name, init_test, run_parent, run_child };
   char *ring_order = getenv("MEMPIPE_RING_ORDER");
   if (ring_order) {
     int as_int;

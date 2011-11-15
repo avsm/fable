@@ -99,7 +99,7 @@ run_parent(test_data *td)
 	  if(mapped)
 	    if(munmap(mapped, ALLOC_PAGES * 4096))
 	      err(1, "munmap");
-	  mapped = mmap(0, ALLOC_PAGES * 4096, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	  mapped = mmap(0, ALLOC_PAGES * 4096, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, -1, 0);
 	  if(mapped == MAP_FAILED)
 	    err(1, "mmap");
 	  write_offset = 0;
