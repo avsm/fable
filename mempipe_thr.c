@@ -51,6 +51,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#undef USE_MWAIT
+
 #include "test.h"
 #include "xutil.h"
 
@@ -133,6 +135,49 @@ set_message(void *data, unsigned long offset, unsigned size, int byte)
   }
 }
 
+#ifdef USE_MWAIT
+static void
+mwait(void)
+{
+  asm volatile("mwait\n"
+	       :
+	       : "a" (0), "c" (0));
+}
+static void
+monitor(const volatile void *what)
+{
+  asm volatile("monitor\n"
+	       :
+	       : "a" (what),
+		 "c" (0),
+		 "d" (0)
+	       );
+}
+#else
+static void
+mwait(void)
+{
+}
+static void
+monitor(const volatile void *what)
+{
+}
+#endif
+
+#define SPIN_WAIT(local, shared, condition)	\
+  do {						\
+    local = (shared);				\
+  if (!(condition)) {				\
+    while (1) {					\
+      monitor(&(shared));			\
+      local = (shared);				\
+      if (condition)				\
+	break;					\
+      mwait();					\
+    }						\
+  }						\
+ } while (0)
+
 static void
 run_child(test_data *td)
 {
@@ -151,9 +196,7 @@ run_child(test_data *td)
   int i;
   for (i = 0; ;i++) {
     mh = td->data + mask_ring_index(next_message_start);
-    while (mh->size <= 0)
-      ;
-    sz = mh->size;
+    SPIN_WAIT(sz, mh->size, sz > 0);
     if (sz == 1) /* End of test; normal messages are multiples of
 		    cache line size. */
       break;
@@ -162,15 +205,6 @@ run_child(test_data *td)
       assert(0);
     }
     consume_message(td->data, next_message_start + sizeof(struct msg_header), sz, buf);
-    /*
-    int j;
-    for(j = 0; j < td->size; j++) {
-      if(buf[j] != (char)i) {
-	printf("Expected %u got %u at %d\n", i, buf[j], j);
-	assert(0);
-      }
-    }
-    */
     mh->size = -sz;
     next_message_start += sz + sizeof(struct msg_header);
   }
@@ -206,9 +240,7 @@ run_parent(test_data *td)
       while (eom - first_unacked_msg > ring_size) {
 	int size;
 	mh = td->data + mask_ring_index(first_unacked_msg);
-	do {
-	  size = mh->size;
-	} while (size > 0);
+	SPIN_WAIT(size, mh->size, size < 0);
 	assert(size < 0);
 	assert(size % CACHE_LINE_SIZE == 0);
 	first_unacked_msg += -size + sizeof(struct msg_header);
@@ -240,9 +272,7 @@ run_parent(test_data *td)
       while (first_unacked_msg != next_tx_offset) {
 	int size;
 	mh = td->data + mask_ring_index(first_unacked_msg);
-	do {
-	  size = mh->size;
-	} while (size > 0);
+	SPIN_WAIT(size, mh->size, size < 0);
 	first_unacked_msg += -size + sizeof(struct msg_header);
       }
     } while (0),
@@ -253,11 +283,48 @@ run_parent(test_data *td)
   mh->size = 1;
 }
 
+#ifdef USE_MWAIT
+static void
+cpuid(int leaf, unsigned long *a, unsigned long *b, unsigned long *c, unsigned long *d)
+{
+  unsigned long _a, _b, _c, _d;
+  asm ("cpuid"
+       : "=a" (_a), "=b" (_b), "=c" (_c), "=d" (_d)
+       : "0" (leaf)
+       );
+  if (a)
+    *a = _a;
+  if (b)
+    *b = _b;
+  if (c)
+    *c = _c;
+  if (d)
+    *d = _d;
+}
+
+static void
+check_monitor_line_size(void)
+{
+  unsigned long a, b, c;
+  cpuid(5, &a, &b, NULL, NULL);
+  assert(a == b);
+  assert(a == CACHE_LINE_SIZE);
+  cpuid(1, NULL, NULL, &c, NULL);
+  printf("Available: %d\n", !!(c & (1 << 3)));
+}
+#else
+static void
+check_monitor_line_size(void)
+{
+}
+#endif
+
 int
 main(int argc, char *argv[])
 {
   test_t t = { test_name, init_test, run_parent, run_child };
   char *ring_order = getenv("MEMPIPE_RING_ORDER");
+  check_monitor_line_size();
   if (ring_order) {
     int as_int;
     if (sscanf(ring_order, "%d", &as_int) != 1)
