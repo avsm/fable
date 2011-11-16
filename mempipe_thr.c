@@ -220,12 +220,34 @@ monitor(const volatile void *what)
 }
 #endif
 
+/* Deferred write state */
+#ifdef USE_FUTEX
+static struct {
+  volatile unsigned *ptr;
+  unsigned val;
+  unsigned cntr;
+} deferred_write;
+
+static void
+_set_message_ready(volatile unsigned *ptr, unsigned val)
+{
+  int sz;
+  sz = atomic_xchg(ptr, val);
+  if (sz & MH_FLAG_WAITING)
+    futex_wake(ptr);
+}
+#endif
+
 static int
 wait_for_message_ready(volatile struct msg_header *mh, int desired_state)
 {
   int sz;
 #ifdef USE_FUTEX
   int new_sz;
+  if (deferred_write.ptr) {
+    _set_message_ready(deferred_write.ptr, deferred_write.val);
+    deferred_write.ptr = NULL;
+  }
   while (1) {
     sz = mh->size_and_flags;
     if ((sz & MH_FLAG_READY) == desired_state)
@@ -254,10 +276,18 @@ static void
 set_message_ready(volatile struct msg_header *mh, int size)
 {
 #ifdef USE_FUTEX
-  int sz;
-  sz = atomic_xchg(&mh->size_and_flags, size);
-  if (sz & MH_FLAG_WAITING)
-    futex_wake(&mh->size_and_flags);
+  if (deferred_write.ptr) {
+    deferred_write.cntr--;
+    mh->size_and_flags = size;
+    if (!deferred_write.cntr) {
+      _set_message_ready(deferred_write.ptr, deferred_write.val);
+      deferred_write.ptr = NULL;
+    }
+  } else {
+    deferred_write.ptr = &mh->size_and_flags;
+    deferred_write.val = size;
+    deferred_write.cntr = 2;
+  }
 #else
   mh->size_and_flags = size;
 #endif
