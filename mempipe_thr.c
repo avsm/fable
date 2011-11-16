@@ -41,9 +41,12 @@
 
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
+#include <linux/futex.h>
 #include <assert.h>
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
@@ -52,6 +55,7 @@
 #include <unistd.h>
 
 #undef USE_MWAIT
+#define USE_FUTEX
 
 #include "test.h"
 #include "xutil.h"
@@ -81,9 +85,59 @@ static void mymemset(void* buf, int byte, size_t count) {
 #define test_name "mempipe_thr"
 #endif
 
+static unsigned
+atomic_cmpxchg(volatile unsigned *loc, unsigned old, unsigned new)
+{
+  unsigned long res;
+  asm ("lock cmpxchg %3, %1\n"
+       : "=a" (res), "=m" (*loc)
+       : "0" (old),
+	 "r" (new),
+	 "m" (*loc)
+       : "memory");
+  return res;
+}
+
+static unsigned
+atomic_xchg(volatile unsigned *loc, unsigned new)
+{
+  unsigned long res;
+  asm ("xchg %0, %1\n"
+       : "=r" (res),
+	 "=m" (*loc)
+       : "m" (*loc),
+	 "0" (new)
+       : "memory");
+  return res;
+}
+
+static int
+futex(volatile unsigned *slot, int cmd, unsigned val, const struct timespec *ts,
+      int *uaddr, int val2)
+{
+  return syscall(SYS_futex, slot, cmd, val, ts, uaddr, val2);
+}
+
+static void
+futex_wait_while_equal(volatile unsigned *slot, unsigned val)
+{
+  assert((unsigned long)slot % 4 == 0);
+  if (futex(slot, FUTEX_WAIT, val, NULL, NULL, 0) < 0 && errno != EAGAIN)
+    err(1, "futex_wait");
+}
+
+static void
+futex_wake(volatile unsigned *slot)
+{
+  if (futex(slot, FUTEX_WAKE, 1, NULL, NULL, 0) < 0)
+    err(1, "futex_wake");
+}
+
 struct msg_header {
 #define MH_FLAG_READY 1
 #define MH_FLAG_STOP 2
+#define MH_FLAG_WAITING 4
+#define MH_FLAGS (MH_FLAG_READY|MH_FLAG_STOP|MH_FLAG_WAITING)
   unsigned size_and_flags;
   int pad[CACHE_LINE_SIZE / sizeof(int) - 1];
 };
@@ -186,6 +240,7 @@ run_child(test_data *td)
   unsigned long next_message_start;
   volatile struct msg_header *mh = td->data;
   int sz;
+  int new_sz;
   char *buf = xmalloc(td->size);
 
   /* Sync up with parent */
@@ -197,18 +252,39 @@ run_child(test_data *td)
   /* Enter main message loop */
   int i;
   for (i = 0; ;i++) {
+    assert(next_message_start % CACHE_LINE_SIZE == 0);
     mh = td->data + mask_ring_index(next_message_start);
+#ifdef USE_FUTEX
+    while (1) {
+      sz = mh->size_and_flags;
+      if (sz & MH_FLAG_READY)
+	break;
+      new_sz = sz | MH_FLAG_WAITING;
+      if (new_sz == sz ||
+	  atomic_cmpxchg(&mh->size_and_flags, sz, new_sz) == sz)
+	futex_wait_while_equal(&mh->size_and_flags, new_sz);
+    }
+#else
     SPIN_WAIT(sz, mh->size_and_flags, sz & MH_FLAG_READY);
+#endif
     if (sz & MH_FLAG_STOP) /* End of test */
       break;
-    sz &= ~MH_FLAG_READY;
+    sz &= ~MH_FLAGS;
     if(sz != td->size) {
       printf("%d %d %ld\n", sz, td->size, next_message_start);
       assert(0);
     }
     consume_message(td->data, next_message_start + sizeof(struct msg_header), sz, buf);
+
+#ifdef USE_FUTEX
+    sz = atomic_xchg(&mh->size_and_flags, sz);
+    if (sz & MH_FLAG_WAITING)
+      futex_wake(&mh->size_and_flags);
+#else
     mh->size_and_flags = sz;
-    next_message_start += sz + sizeof(struct msg_header);
+#endif
+
+    next_message_start += (sz & ~MH_FLAGS) + sizeof(struct msg_header);
   }
 }
 
@@ -242,8 +318,22 @@ run_parent(test_data *td)
       while (eom - first_unacked_msg > ring_size) {
 	int size;
 	mh = td->data + mask_ring_index(first_unacked_msg);
+#ifdef USE_FUTEX
+	while (1) {
+	  int new_size;
+	  size = mh->size_and_flags;
+	  if (!(size & MH_FLAG_READY))
+	    break;
+	  new_size = size | MH_FLAG_WAITING;
+	  if (new_size == size ||
+	      atomic_cmpxchg(&mh->size_and_flags, size, new_size) == size)
+	    futex_wait_while_equal(&mh->size_and_flags, new_size);
+	}
+#else
 	SPIN_WAIT(size, mh->size_and_flags, !(size & MH_FLAG_READY));
+#endif
 	assert(!(size & MH_FLAG_READY));
+	size &= ~MH_FLAGS;
 	assert(size % CACHE_LINE_SIZE == 0);
 	first_unacked_msg += size + sizeof(struct msg_header);
       }
@@ -266,7 +356,14 @@ run_parent(test_data *td)
       mh2 = td->data + mask_ring_index(next_tx_offset + td->size + sizeof(struct msg_header));
       mh2->size_and_flags = 0;
 
+#ifdef USE_FUTEX
+      int size;
+      size = atomic_xchg(&mh->size_and_flags, td->size | MH_FLAG_READY);
+      if (size & MH_FLAG_WAITING)
+	futex_wake(&mh->size_and_flags);
+#else
       mh->size_and_flags = td->size | MH_FLAG_READY;
+#endif
       next_tx_offset += td->size + sizeof(struct msg_header);
     } while(0),
     do {
