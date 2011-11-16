@@ -82,7 +82,9 @@ static void mymemset(void* buf, int byte, size_t count) {
 #endif
 
 struct msg_header {
-  int size;
+#define MH_FLAG_READY 1
+#define MH_FLAG_STOP 2
+  unsigned size_and_flags;
   int pad[CACHE_LINE_SIZE / sizeof(int) - 1];
 };
 
@@ -187,8 +189,8 @@ run_child(test_data *td)
   char *buf = xmalloc(td->size);
 
   /* Sync up with parent */
-  mh->size = 0xf001;
-  while (mh->size == 0xf001)
+  mh->size_and_flags = 0xf008;
+  while (mh->size_and_flags == 0xf008)
     ;
 
   next_message_start = 0;
@@ -196,16 +198,16 @@ run_child(test_data *td)
   int i;
   for (i = 0; ;i++) {
     mh = td->data + mask_ring_index(next_message_start);
-    SPIN_WAIT(sz, mh->size, sz > 0);
-    if (sz == 1) /* End of test; normal messages are multiples of
-		    cache line size. */
+    SPIN_WAIT(sz, mh->size_and_flags, sz & MH_FLAG_READY);
+    if (sz & MH_FLAG_STOP) /* End of test */
       break;
+    sz &= ~MH_FLAG_READY;
     if(sz != td->size) {
       printf("%d %d %ld\n", sz, td->size, next_message_start);
       assert(0);
     }
     consume_message(td->data, next_message_start + sizeof(struct msg_header), sz, buf);
-    mh->size = -sz;
+    mh->size_and_flags = sz;
     next_message_start += sz + sizeof(struct msg_header);
   }
 }
@@ -222,9 +224,9 @@ run_parent(test_data *td)
   assert(td->size < ring_size - sizeof(struct msg_header));
 
   /* Wait for child to show up. */
-  while (mh->size != 0xf001)
+  while (mh->size_and_flags != 0xf008)
     ;
-  mh->size = 0;
+  mh->size_and_flags = 0;
 
   next_tx_offset = 0;
   first_unacked_msg = 0;
@@ -240,10 +242,10 @@ run_parent(test_data *td)
       while (eom - first_unacked_msg > ring_size) {
 	int size;
 	mh = td->data + mask_ring_index(first_unacked_msg);
-	SPIN_WAIT(size, mh->size, size < 0);
-	assert(size < 0);
+	SPIN_WAIT(size, mh->size_and_flags, !(size & MH_FLAG_READY));
+	assert(!(size & MH_FLAG_READY));
 	assert(size % CACHE_LINE_SIZE == 0);
-	first_unacked_msg += -size + sizeof(struct msg_header);
+	first_unacked_msg += size + sizeof(struct msg_header);
       }
       /* Send message */
       mh = td->data + mask_ring_index(next_tx_offset);
@@ -262,9 +264,9 @@ run_parent(test_data *td)
 	 rather than wandering off into la-la land if it picks up a
 	 stale message. */
       mh2 = td->data + mask_ring_index(next_tx_offset + td->size + sizeof(struct msg_header));
-      mh2->size = 0;
+      mh2->size_and_flags = 0;
 
-      mh->size = td->size;
+      mh->size_and_flags = td->size | MH_FLAG_READY;
       next_tx_offset += td->size + sizeof(struct msg_header);
     } while(0),
     do {
@@ -272,15 +274,15 @@ run_parent(test_data *td)
       while (first_unacked_msg != next_tx_offset) {
 	int size;
 	mh = td->data + mask_ring_index(first_unacked_msg);
-	SPIN_WAIT(size, mh->size, size < 0);
-	first_unacked_msg += -size + sizeof(struct msg_header);
+	SPIN_WAIT(size, mh->size_and_flags, !(size & MH_FLAG_READY));
+	first_unacked_msg += size + sizeof(struct msg_header);
       }
     } while (0),
     td);
 
   /* Tell child to go away */
   mh = td->data + mask_ring_index(next_tx_offset);
-  mh->size = 1;
+  mh->size_and_flags = MH_FLAG_READY | MH_FLAG_STOP;
 }
 
 #ifdef USE_MWAIT
