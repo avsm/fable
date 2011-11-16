@@ -45,7 +45,11 @@
 #include "test.h"
 #include "xutil.h"
 
-
+#ifdef USE_HUGE_PAGES
+const char* test_name = "vmsplice_hugepage_pipe_thr";
+#else
+const char* test_name = "vmsplice_pipe_thr";
+#endif
 
 typedef struct {
   int fds[2];
@@ -99,7 +103,11 @@ run_parent(test_data *td)
 	  if(mapped)
 	    if(munmap(mapped, ALLOC_PAGES * 4096))
 	      err(1, "munmap");
-	  mapped = mmap(0, ALLOC_PAGES * 4096, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, -1, 0);
+	  int flags = MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE;
+#ifdef USE_HUGE_PAGES
+	  flags |= MAP_HUGETLB;
+#endif
+	  mapped = mmap(0, ALLOC_PAGES * 4096, PROT_WRITE | PROT_READ, flags, -1, 0);
 	  if(mapped == MAP_FAILED)
 	    err(1, "mmap");
 	  write_offset = 0;
@@ -136,7 +144,7 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "vmsplice_pipe_thr", init_test, run_parent, run_child };
+  test_t t = { test_name, init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
 }
