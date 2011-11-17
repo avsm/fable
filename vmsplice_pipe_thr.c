@@ -35,6 +35,7 @@
 #include <inttypes.h>
 #include <netdb.h>
 #include <fcntl.h>
+#include <assert.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -51,8 +52,11 @@ const char* test_name = "vmsplice_hugepage_pipe_thr";
 const char* test_name = "vmsplice_pipe_thr";
 #endif
 
+int coop_reporting_chunk_size;
+
 typedef struct {
   int fds[2];
+  int ret_fds[2];
   int fin_fds[2];
 } pipe_state;
 
@@ -64,6 +68,8 @@ init_test(test_data *td)
     err(1, "pipe");
   if (pipe(ps->fin_fds) == -1)
     err(1, "pipe");
+  if (pipe(ps->ret_fds) == -1)
+    err(1, "pipe");
   td->data = (void *)ps;
 }
 
@@ -73,24 +79,38 @@ run_child(test_data *td)
   pipe_state *ps = (pipe_state *)td->data;
   void *buf = xmalloc(td->size);
   int i;
+  int total_read = 0;
 
   for (i = 0; i < td->count; i++) {
     xread(ps->fds[0], buf, td->size);
+    total_read += td->size;
+#ifdef VMSPLICE_COOP
+    if(total_read >= coop_reporting_chunk_size) {
+      xwrite(ps->ret_fds[0], &coop_reporting_chunk_size, sizeof(int));
+      total_read -= coop_reporting_chunk_size;
+    }
+#endif
   }
   xwrite(ps->fin_fds[1], "X", 1);
 }
 
 #define ALLOC_PAGES 512
+// 2MB == my L2 cache size / 2
 
 static void
 run_parent(test_data *td)
 {
   pipe_state *ps = (pipe_state *)td->data;
   void *buf = xmalloc(td->size);
+  void *coop_buf = xmalloc(4096);
   struct iovec iov;
 
   void* mapped = 0;
   int write_offset = 0;
+  int bytes_written = 0;
+  int chunks_written = 0;
+  int chunks_read = 0;
+  int ring_size = ALLOC_PAGES * 4096;
 
   thr_test(
     do {
@@ -99,19 +119,37 @@ run_parent(test_data *td)
 	iov.iov_len = td->size;
       }
       else {
-	if(!mapped || ((write_offset + td->size) > (ALLOC_PAGES * 4096))) {
+	int map_condition = !mapped;
+#ifndef VMSPLICE_COOP
+	map_condition = map_condition || ((write_offset + td->size) > (ALLOC_PAGES * 4096));
+#endif
+	if(map_condition) {
 	  if(mapped)
-	    if(munmap(mapped, ALLOC_PAGES * 4096))
+	    if(munmap(mapped, ring_size))
 	      err(1, "munmap");
 	  int flags = MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE;
 #ifdef USE_HUGE_PAGES
 	  flags |= MAP_HUGETLB;
 #endif
-	  mapped = mmap(0, ALLOC_PAGES * 4096, PROT_WRITE | PROT_READ, flags, -1, 0);
+	  mapped = mmap(0, ring_size, PROT_WRITE | PROT_READ, flags, -1, 0);
 	  if(mapped == MAP_FAILED)
 	    err(1, "mmap");
 	  write_offset = 0;
 	}
+#ifdef VMSPLICE_COOP
+	if(write_offset > ring_size)
+	  write_offset -= ring_size;
+	while((ring_size - ((chunks_written - chunks_read) * coop_reporting_chunk_size)) < td->size) {
+	  int rep_bytes = read(ps->ret_fds[0], coop_buf, 4096);
+	  assert(rep_bytes % 4 == 0);
+	  int i;
+	  int* int_buf = (int*)coop_buf;
+	  for(i = 0; i < rep_bytes/4; i++) {
+	    assert(int_buf[0] == coop_reporting_chunk_size);
+	    chunks_read++;
+	  }
+	}
+#endif
 	void* tosend = mapped + write_offset;
 	if(td->mode == MODE_DATAINPLACE) {
 	  memset(tosend, i, td->size);
@@ -119,6 +157,11 @@ run_parent(test_data *td)
 	else {
 	  memset(buf, i, td->size);
 	  memcpy(tosend, buf, td->size);
+	}
+	bytes_written += td->size;
+	if(bytes_written >= coop_reporting_chunk_size) {
+	  chunks_written += (bytes_written / coop_reporting_chunk_size);
+	  bytes_written %= coop_reporting_chunk_size;
 	}
 	write_offset += td->size;
 	iov.iov_base = tosend;
@@ -144,6 +187,21 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
+#ifdef VMSPLICE_COOP
+  char* chunk_str = getenv("VMSPLICE_COOP_CHUNK");
+  if(!chunk_str) {
+    char* str_end;
+    coop_reporting_chunk_size = strtol(chunk_str, &str_end, 10);
+    if(str_end[0]) {
+      err(1, "VMSPLICE_COOP_CHUNK must be an integer");
+    }
+  }
+  else {
+    coop_reporting_chunk_size = 1024*1024;
+  }
+  printf("Cooperative reporting: chunk size %dK", coop_reporting_chunk_size/1024);
+#endif
+
   test_t t = { test_name, init_test, run_parent, run_child };
   run_test(argc, argv, &t);
   return 0;
