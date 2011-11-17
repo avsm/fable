@@ -46,10 +46,18 @@
 #include "test.h"
 #include "xutil.h"
 
+#ifndef VMSPLICE_COOP
 #ifdef USE_HUGE_PAGES
 const char* test_name = "vmsplice_hugepage_pipe_thr";
 #else
 const char* test_name = "vmsplice_pipe_thr";
+#endif
+#else
+#ifdef USE_HUGE_PAGES
+const char* test_name = "vmsplice_hugepage_coop_pipe_thr";
+#else
+const char* test_name = "vmsplice_coop_pipe_thr";
+#endif
 #endif
 
 int coop_reporting_chunk_size;
@@ -85,8 +93,8 @@ run_child(test_data *td)
     xread(ps->fds[0], buf, td->size);
     total_read += td->size;
 #ifdef VMSPLICE_COOP
-    if(total_read >= coop_reporting_chunk_size) {
-      xwrite(ps->ret_fds[0], &coop_reporting_chunk_size, sizeof(int));
+    while(total_read >= coop_reporting_chunk_size) {
+      xwrite(ps->ret_fds[1], &coop_reporting_chunk_size, sizeof(int));
       total_read -= coop_reporting_chunk_size;
     }
 #endif
@@ -137,8 +145,14 @@ run_parent(test_data *td)
 	  write_offset = 0;
 	}
 #ifdef VMSPLICE_COOP
-	if(write_offset > ring_size)
+	if(write_offset >= ring_size)
 	  write_offset -= ring_size;
+	// Note we only do this now before starting the write, *not* during the write.
+	// This opens the following opportunity for deadlock: whilst we're writing (vmsplicing) into the pipe,
+	// the pipe buffer could fill. Whilst we're blocked waiting on the reader to clear the pipe, he might
+	// write into the reporting pipe, which is also full - we wait for each other for want of a poll() call (but boo, more syscalls in the fast path).
+	// This can't happen so long as the writer would *need* to reclaim tokens before possibly writing enough to cause the reader to fill the token buffer.
+	// That is, the kernel pipe buffer size is large enough to contain sizeof(int) * (ring_size / reporting_chunk_size).
 	while((ring_size - ((chunks_written - chunks_read) * coop_reporting_chunk_size)) < td->size) {
 	  int rep_bytes = read(ps->ret_fds[0], coop_buf, 4096);
 	  assert(rep_bytes % 4 == 0);
@@ -159,9 +173,9 @@ run_parent(test_data *td)
 	  memcpy(tosend, buf, td->size);
 	}
 	bytes_written += td->size;
-	if(bytes_written >= coop_reporting_chunk_size) {
-	  chunks_written += (bytes_written / coop_reporting_chunk_size);
-	  bytes_written %= coop_reporting_chunk_size;
+	while(bytes_written >= coop_reporting_chunk_size) {
+	  chunks_written++;
+	  bytes_written -= coop_reporting_chunk_size;
 	}
 	write_offset += td->size;
 	iov.iov_base = tosend;
@@ -189,7 +203,7 @@ main(int argc, char *argv[])
 {
 #ifdef VMSPLICE_COOP
   char* chunk_str = getenv("VMSPLICE_COOP_CHUNK");
-  if(!chunk_str) {
+  if(chunk_str) {
     char* str_end;
     coop_reporting_chunk_size = strtol(chunk_str, &str_end, 10);
     if(str_end[0]) {
@@ -199,7 +213,7 @@ main(int argc, char *argv[])
   else {
     coop_reporting_chunk_size = 1024*1024;
   }
-  printf("Cooperative reporting: chunk size %dK", coop_reporting_chunk_size/1024);
+  printf("Cooperative reporting: chunk size %dK\n", coop_reporting_chunk_size/1024);
 #endif
 
   test_t t = { test_name, init_test, run_parent, run_child };
