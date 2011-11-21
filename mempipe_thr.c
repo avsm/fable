@@ -41,15 +41,21 @@
 
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/time.h>
+#include <linux/futex.h>
 #include <assert.h>
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#undef USE_MWAIT
+#define USE_FUTEX
 
 #include "test.h"
 #include "xutil.h"
@@ -79,8 +85,60 @@ static void mymemset(void* buf, int byte, size_t count) {
 #define test_name "mempipe_thr"
 #endif
 
+static unsigned
+atomic_cmpxchg(volatile unsigned *loc, unsigned old, unsigned new)
+{
+  unsigned long res;
+  asm ("lock cmpxchg %3, %1\n"
+       : "=a" (res), "=m" (*loc)
+       : "0" (old),
+	 "r" (new),
+	 "m" (*loc)
+       : "memory");
+  return res;
+}
+
+static unsigned
+atomic_xchg(volatile unsigned *loc, unsigned new)
+{
+  unsigned long res;
+  asm ("xchg %0, %1\n"
+       : "=r" (res),
+	 "=m" (*loc)
+       : "m" (*loc),
+	 "0" (new)
+       : "memory");
+  return res;
+}
+
+static int
+futex(volatile unsigned *slot, int cmd, unsigned val, const struct timespec *ts,
+      int *uaddr, int val2)
+{
+  return syscall(SYS_futex, slot, cmd, val, ts, uaddr, val2);
+}
+
+static void
+futex_wait_while_equal(volatile unsigned *slot, unsigned val)
+{
+  assert((unsigned long)slot % 4 == 0);
+  if (futex(slot, FUTEX_WAIT, val, NULL, NULL, 0) < 0 && errno != EAGAIN)
+    err(1, "futex_wait");
+}
+
+static void
+futex_wake(volatile unsigned *slot)
+{
+  if (futex(slot, FUTEX_WAKE, 1, NULL, NULL, 0) < 0)
+    err(1, "futex_wake");
+}
+
 struct msg_header {
-  int size;
+#define MH_FLAG_READY 1
+#define MH_FLAG_STOP 2
+#define MH_FLAG_WAITING 4
+#define MH_FLAGS (MH_FLAG_READY|MH_FLAG_STOP|MH_FLAG_WAITING)
+  unsigned size_and_flags;
   int pad[CACHE_LINE_SIZE / sizeof(int) - 1];
 };
 
@@ -133,6 +191,108 @@ set_message(void *data, unsigned long offset, unsigned size, int byte)
   }
 }
 
+#ifdef USE_MWAIT
+static void
+mwait(void)
+{
+  asm volatile("mwait\n"
+	       :
+	       : "a" (0), "c" (0));
+}
+static void
+monitor(const volatile void *what)
+{
+  asm volatile("monitor\n"
+	       :
+	       : "a" (what),
+		 "c" (0),
+		 "d" (0)
+	       );
+}
+#else
+static void
+mwait(void)
+{
+}
+static void
+monitor(const volatile void *what)
+{
+}
+#endif
+
+/* Deferred write state */
+#ifdef USE_FUTEX
+static struct {
+  volatile unsigned *ptr;
+  unsigned val;
+  unsigned cntr;
+} deferred_write;
+
+static void
+_set_message_ready(volatile unsigned *ptr, unsigned val)
+{
+  int sz;
+  sz = atomic_xchg(ptr, val);
+  if (sz & MH_FLAG_WAITING)
+    futex_wake(ptr);
+}
+#endif
+
+static int
+wait_for_message_ready(volatile struct msg_header *mh, int desired_state)
+{
+  int sz;
+#ifdef USE_FUTEX
+  int new_sz;
+  if (deferred_write.ptr) {
+    _set_message_ready(deferred_write.ptr, deferred_write.val);
+    deferred_write.ptr = NULL;
+  }
+  while (1) {
+    sz = mh->size_and_flags;
+    if ((sz & MH_FLAG_READY) == desired_state)
+      break;
+    new_sz = sz | MH_FLAG_WAITING;
+    if (new_sz == sz ||
+	atomic_cmpxchg(&mh->size_and_flags, sz, new_sz) == sz)
+      futex_wait_while_equal(&mh->size_and_flags, new_sz);
+  }
+#else
+  sz = mh->size_and_flags;
+  if ((sz & MH_FLAG_READY) != desired_state) {
+    while (1) {
+      monitor(&mh->size_and_flags);
+      sz = mh->size_and_flags;
+      if ((sz & MH_FLAG_READY) == desired_state)
+	break;
+      mwait();
+    }
+  }
+#endif
+  return sz;
+}
+
+static void
+set_message_ready(volatile struct msg_header *mh, int size)
+{
+#ifdef USE_FUTEX
+  if (deferred_write.ptr) {
+    deferred_write.cntr--;
+    mh->size_and_flags = size;
+    if (!deferred_write.cntr) {
+      _set_message_ready(deferred_write.ptr, deferred_write.val);
+      deferred_write.ptr = NULL;
+    }
+  } else {
+    deferred_write.ptr = &mh->size_and_flags;
+    deferred_write.val = size;
+    deferred_write.cntr = 2;
+  }
+#else
+  mh->size_and_flags = size;
+#endif
+}
+
 static void
 run_child(test_data *td)
 {
@@ -142,36 +302,28 @@ run_child(test_data *td)
   char *buf = xmalloc(td->size);
 
   /* Sync up with parent */
-  mh->size = 0xf001;
-  while (mh->size == 0xf001)
+  mh->size_and_flags = 0xf008;
+  while (mh->size_and_flags == 0xf008)
     ;
 
   next_message_start = 0;
   /* Enter main message loop */
   int i;
   for (i = 0; ;i++) {
+    assert(next_message_start % CACHE_LINE_SIZE == 0);
     mh = td->data + mask_ring_index(next_message_start);
-    while (mh->size <= 0)
-      ;
-    sz = mh->size;
-    if (sz == 1) /* End of test; normal messages are multiples of
-		    cache line size. */
+    sz = wait_for_message_ready(mh, MH_FLAG_READY);
+    if (sz & MH_FLAG_STOP) /* End of test */
       break;
+    sz &= ~MH_FLAGS;
     if(sz != td->size) {
       printf("%d %d %ld\n", sz, td->size, next_message_start);
       assert(0);
     }
     consume_message(td->data, next_message_start + sizeof(struct msg_header), sz, buf);
-    /*
-    int j;
-    for(j = 0; j < td->size; j++) {
-      if(buf[j] != (char)i) {
-	printf("Expected %u got %u at %d\n", i, buf[j], j);
-	assert(0);
-      }
-    }
-    */
-    mh->size = -sz;
+
+    set_message_ready(mh, sz);
+
     next_message_start += sz + sizeof(struct msg_header);
   }
 }
@@ -188,9 +340,9 @@ run_parent(test_data *td)
   assert(td->size < ring_size - sizeof(struct msg_header));
 
   /* Wait for child to show up. */
-  while (mh->size != 0xf001)
+  while (mh->size_and_flags != 0xf008)
     ;
-  mh->size = 0;
+  mh->size_and_flags = 0;
 
   next_tx_offset = 0;
   first_unacked_msg = 0;
@@ -206,13 +358,11 @@ run_parent(test_data *td)
       while (eom - first_unacked_msg > ring_size) {
 	int size;
 	mh = td->data + mask_ring_index(first_unacked_msg);
-	do {
-	  size = mh->size;
-	} while (size > 0);
-	assert(size < 0);
-	assert(size % CACHE_LINE_SIZE == 0);
-	first_unacked_msg += -size + sizeof(struct msg_header);
+	size = wait_for_message_ready(mh, 0);
+	size &= ~MH_FLAGS;
+	first_unacked_msg += size + sizeof(struct msg_header);
       }
+
       /* Send message */
       mh = td->data + mask_ring_index(next_tx_offset);
       if(td->mode == MODE_DATAINPLACE) {
@@ -230,9 +380,10 @@ run_parent(test_data *td)
 	 rather than wandering off into la-la land if it picks up a
 	 stale message. */
       mh2 = td->data + mask_ring_index(next_tx_offset + td->size + sizeof(struct msg_header));
-      mh2->size = 0;
+      mh2->size_and_flags = 0;
 
-      mh->size = td->size;
+      set_message_ready(mh, td->size | MH_FLAG_READY);
+
       next_tx_offset += td->size + sizeof(struct msg_header);
     } while(0),
     do {
@@ -240,24 +391,60 @@ run_parent(test_data *td)
       while (first_unacked_msg != next_tx_offset) {
 	int size;
 	mh = td->data + mask_ring_index(first_unacked_msg);
-	do {
-	  size = mh->size;
-	} while (size > 0);
-	first_unacked_msg += -size + sizeof(struct msg_header);
+	size = wait_for_message_ready(mh, 0);
+	size &= ~MH_FLAGS;
+	first_unacked_msg += size + sizeof(struct msg_header);
       }
     } while (0),
     td);
 
   /* Tell child to go away */
   mh = td->data + mask_ring_index(next_tx_offset);
-  mh->size = 1;
+  mh->size_and_flags = MH_FLAG_READY | MH_FLAG_STOP;
 }
+
+#ifdef USE_MWAIT
+static void
+cpuid(int leaf, unsigned long *a, unsigned long *b, unsigned long *c, unsigned long *d)
+{
+  unsigned long _a, _b, _c, _d;
+  asm ("cpuid"
+       : "=a" (_a), "=b" (_b), "=c" (_c), "=d" (_d)
+       : "0" (leaf)
+       );
+  if (a)
+    *a = _a;
+  if (b)
+    *b = _b;
+  if (c)
+    *c = _c;
+  if (d)
+    *d = _d;
+}
+
+static void
+check_monitor_line_size(void)
+{
+  unsigned long a, b, c;
+  cpuid(5, &a, &b, NULL, NULL);
+  assert(a == b);
+  assert(a == CACHE_LINE_SIZE);
+  cpuid(1, NULL, NULL, &c, NULL);
+  printf("Available: %d\n", !!(c & (1 << 3)));
+}
+#else
+static void
+check_monitor_line_size(void)
+{
+}
+#endif
 
 int
 main(int argc, char *argv[])
 {
   test_t t = { test_name, init_test, run_parent, run_child };
   char *ring_order = getenv("MEMPIPE_RING_ORDER");
+  check_monitor_line_size();
   if (ring_order) {
     int as_int;
     if (sscanf(ring_order, "%d", &as_int) != 1)
