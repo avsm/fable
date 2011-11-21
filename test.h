@@ -25,6 +25,10 @@
 
 #include <stdio.h>
 
+#define MODE_NODATA 0
+#define MODE_DATAINPLACE 1
+#define MODE_DATAEXT 2
+
 typedef struct {
   int num;
   int size;
@@ -33,6 +37,7 @@ typedef struct {
   void *data;
   const char *output_dir;
   const char *name;
+  int mode;
 } test_data;
 
 typedef struct {
@@ -104,7 +109,7 @@ void logmsg(test_data *td,
     else								\
       logmsg(td,							\
 	     "headline",						\
-	     "%s %d %" PRId64 " %" PRId64 " Mbps\n", td->name, td->size, \
+	     "%s %d %d %" PRId64 " %" PRId64 " Mbps\n", td->name, td->size, td->mode, \
 	     td->count,							\
 	     ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); \
 									\
