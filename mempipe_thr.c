@@ -354,6 +354,7 @@ run_parent(test_data *td)
   /* Tell child to go away */
   mh = td->data + mask_ring_index(next_tx_offset);
   mh->size_and_flags = MH_FLAG_READY | MH_FLAG_STOP;
+  futex_wake(&mh->size_and_flags);
 }
 
 #ifdef USE_MWAIT
