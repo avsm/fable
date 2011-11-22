@@ -55,9 +55,6 @@ struct shmem_pipe {
 struct extent {
 	unsigned base;
 	unsigned size;
-#ifndef NDEBUG
-	int sequence;
-#endif
 };
 
 #ifdef UNSAFE_ALLOCATOR
@@ -519,8 +516,6 @@ run_child(test_data *td)
 	int j;
 	int k;
 	bool write_closed = false;
-	int incoming_sequence = 0;
-	int outgoing_sequence = 0xf0010000;
 	void *rx_buf = malloc(td->size);
 
 	close(sp->child_to_parent_read);
@@ -587,13 +582,8 @@ run_child(test_data *td)
 			struct extent out;
 			assert(inc->base <= ring_size);
 			assert(inc->base + inc->size <= ring_size);
-			assert(inc->sequence == incoming_sequence);
-			incoming_sequence++;
 			consume_message(sp->ring + inc->base, inc->size, rx_buf);
 			out = *inc;
-#ifndef NDEBUG
-			out.sequence = outgoing_sequence;
-#endif
 
 			if ((outgoing_prod + sizeof(out)) / sizeof(outgoing) == outgoing_prod / sizeof(outgoing)) {
 				memcpy(outgoing + (outgoing_prod % sizeof(outgoing)),
@@ -608,7 +598,6 @@ run_child(test_data *td)
 				       sizeof(out) - (sizeof(outgoing) - (outgoing_prod % sizeof(outgoing))));
 			}
 
-			outgoing_sequence++;
 			outgoing_prod += sizeof(out);
 		}
 		memmove(incoming, incoming + i * sizeof(struct extent), incoming_bytes - i * sizeof(struct extent));
@@ -630,7 +619,6 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 	int r;
 	int s;
 	static int total_read;
-	static int sequence = 0xf0010000;
 
 	s = read(sp->child_to_parent_read, sp->rx_buf + sp->rx_buf_prod, sizeof(sp->rx_buf) - sp->rx_buf_prod);
 	if (s < 0)
@@ -639,8 +627,6 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 	sp->rx_buf_prod += s;
 	for (r = 0; r < sp->rx_buf_prod / sizeof(struct extent); r++) {
 		struct extent *e = &((struct extent *)sp->rx_buf)[r];
-		assert(e->sequence == sequence);
-		sequence++;
 		release_shared_space(sp, e->base, e->size);
 	}
 	if (sp->rx_buf_prod != r * sizeof(struct extent))
@@ -653,9 +639,6 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 static void
 send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf)
 {
-#ifndef NDEBUG
-	static int sequence;
-#endif
 	unsigned long offset;
 	struct extent ext;
 
@@ -663,11 +646,6 @@ send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf)
 		wait_for_returned_buffers(sp);
 
 	populate_message(sp->ring + offset, message_size, mode, buf);
-
-#ifndef NDEBUG
-	ext.sequence = sequence;
-	sequence++;
-#endif
 
 	ext.base = offset;
 	ext.size = message_size;
