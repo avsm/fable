@@ -405,8 +405,16 @@ consume_message(const void *buf, int size)
 	static unsigned cntr;
 	const unsigned *b = buf;
 	int i;
-	for (i = 0; i < size / 4; i++)
+	unsigned tot = 0;
+	for (i = 0; i < size / 4; i++) {
 		assert(b[i] == cntr++);
+		tot += b[i];
+	}
+	/* Stop the compiler optimising it away to nothing. */
+	asm volatile (""
+		      :
+		      : "r" (tot)
+		);
 }
 
 static void
