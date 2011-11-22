@@ -22,7 +22,7 @@
 
 #define PAGE_ORDER 12
 #define CACHE_LINE_SIZE 64
-static unsigned ring_order = 14;
+static unsigned ring_order = 9;
 #define ring_size (1ul << (PAGE_ORDER + ring_order))
 
 #define EXTENT_BUFFER_SIZE 4096
