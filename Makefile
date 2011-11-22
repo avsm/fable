@@ -1,4 +1,4 @@
-CFLAGS = -g -Wall -O3 -D_GNU_SOURCE
+CFLAGS = -g -Wall -O3 -D_GNU_SOURCE -DNDEBUG
 LDFLAGS+=-lm
 
 .PHONY: all clean run
