@@ -58,6 +58,7 @@ struct alloc_node {
 	unsigned long end;
 };
 
+#ifndef NDEBUG
 static void
 sanity_check(const struct shmem_pipe *sp)
 {
@@ -95,6 +96,12 @@ sanity_check(const struct shmem_pipe *sp)
 	if (!found_lf)
 		assert(!sp->last_freed_node);
 }
+#else
+static void
+sanity_check(const struct shmem_pipe *sp)
+{
+}
+#endif
 
 static unsigned
 alloc_shared_space(struct shmem_pipe *sp, unsigned size)
