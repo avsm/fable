@@ -239,9 +239,11 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 				   LAN->Y */
 				struct alloc_node *Y = X->next;
 				assert(X->is_free);
-				assert(!Y->is_free);
-				lan->end = Y->start;
-				Y->prev = lan;
+				if (Y) {
+					assert(!Y->is_free);
+					Y->prev = lan;
+				}
+				lan->end = X->end;
 				lan->next = Y;
 				if (X == sp->next_free_alloc)
 					sp->next_free_alloc = NULL;
