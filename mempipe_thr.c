@@ -55,7 +55,9 @@
 #include <unistd.h>
 
 #undef USE_MWAIT
+#ifndef NO_FUTEX
 #define USE_FUTEX
+#endif
 
 #include "test.h"
 #include "xutil.h"
