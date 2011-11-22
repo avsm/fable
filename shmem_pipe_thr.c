@@ -450,51 +450,21 @@ init_test(test_data *td)
 #endif
 }
 
-#ifdef SOS22_MEMSET
-static void mymemset(void* buf, int byte, size_t count) {
-  int clobber;
-  assert(count % 8 == 0);
-  asm volatile ("rep stosq\n"
-		: "=c" (clobber)
-		: "a" ((unsigned long)(byte & 0xff) * 0x0101010101010101ul),
-		  "D" (buf),
-		  "0" (count / 8)
-		: "memory");
-}
-#define real_memset mymemset
-#else
-#define real_memset memset
-#endif
-
 static void
-set_message(void *data, unsigned size, int byte)
+populate_message(void *buf, int size, int mode, void *local_buf, int i)
 {
-	real_memset(data, byte, size);
-}
-
-static void
-copy_message(void *data, const void *inbuf, unsigned size)
-{
-	memcpy(data, inbuf, size);
-}
-
-static void
-populate_message(void *buf, int size, int mode, void *local_buf)
-{
-	static unsigned cntr;
 	switch (mode) {
 	case MODE_DATAINPLACE:
-		set_message(buf, size, cntr);
+		memset(buf, i, size);
 		break;
 	case MODE_DATAEXT:
-		memset(local_buf, cntr, size);
+		memset(local_buf, i, size);
 	case MODE_NODATA:
-		copy_message(buf, local_buf, size);
+		memcpy(buf, local_buf, size);
 		break;
 	default:
 		abort();
 	}
-	cntr++;
 }
 
 static void
@@ -591,7 +561,7 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 }
 
 static void
-send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf)
+send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf, int i)
 {
 	unsigned long offset;
 	struct extent ext;
@@ -599,7 +569,7 @@ send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf)
 	while ((offset = alloc_shared_space(sp, message_size)) == ALLOC_FAILED)
 		wait_for_returned_buffers(sp);
 
-	populate_message(sp->ring + offset, message_size, mode, buf);
+	populate_message(sp->ring + offset, message_size, mode, buf, i);
 
 	ext.base = offset;
 	ext.size = message_size;
@@ -638,7 +608,7 @@ run_parent(test_data *td)
 	close(sp->parent_to_child_read);
 
 	thr_test(
-		send_a_message(sp, td->size, td->mode, local_buf),
+		send_a_message(sp, td->size, td->mode, local_buf, i),
 		flush_buffers(sp),
 		td);
 }
