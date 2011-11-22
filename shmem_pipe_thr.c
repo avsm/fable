@@ -509,44 +509,23 @@ run_child(test_data *td)
 	struct shmem_pipe *sp = td->data;
 	unsigned char incoming[EXTENT_BUFFER_SIZE];
 	struct extent outgoing_extents[EXTENT_BUFFER_SIZE/sizeof(struct extent)];
-	struct pollfd pfd[2];
 	int incoming_bytes = 0;
 	unsigned nr_outgoing_extents = 0;
 	int i;
-	int j;
 	int k;
 	void *rx_buf = malloc(td->size);
 
 	close(sp->child_to_parent_read);
 	close(sp->parent_to_child_write);
 	while (1) {
-		i = 0;
-		if (incoming_bytes < sizeof(incoming)) {
-			pfd[i].fd = sp->parent_to_child_read;
-			pfd[i].events = POLLIN|POLLHUP|POLLRDHUP;
-			pfd[i].revents = 0;
-			i++;
-		}
-		assert(i != 0);
-		j = poll(pfd, i, -1);
-		if (j < 0)
-			err(1, "poll");
-		for (j = 0; j < i; j++) {
-			if (!pfd[j].revents)
-				continue;
-			if (pfd[j].fd == sp->parent_to_child_read) {
-				k = read(sp->parent_to_child_read,
-					 (void *)incoming + incoming_bytes,
-					 sizeof(incoming) - incoming_bytes);
-				if (k == 0)
-					goto eof;
-				if (k < 0)
-					err(1, "child read");
-				incoming_bytes += k;
-			} else {
-				abort();
-			}
-		}
+		k = read(sp->parent_to_child_read,
+			 (void *)incoming + incoming_bytes,
+			 sizeof(incoming) - incoming_bytes);
+		if (k == 0)
+			goto eof;
+		if (k < 0)
+			err(1, "child read");
+		incoming_bytes += k;
 
 		for (i = 0;
 		     i < incoming_bytes / sizeof(struct extent);
