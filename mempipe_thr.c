@@ -61,6 +61,7 @@
 
 #include "test.h"
 #include "xutil.h"
+#include "futex.h"
 
 #define PAGE_SIZE 4096
 #define CACHE_LINE_SIZE 64
@@ -86,54 +87,6 @@ static void mymemset(void* buf, int byte, size_t count) {
 #define real_memset memset
 #define test_name "mempipe_thr"
 #endif
-
-static unsigned
-atomic_cmpxchg(volatile unsigned *loc, unsigned old, unsigned new)
-{
-  unsigned long res;
-  asm ("lock cmpxchg %3, %1\n"
-       : "=a" (res), "=m" (*loc)
-       : "0" (old),
-	 "r" (new),
-	 "m" (*loc)
-       : "memory");
-  return res;
-}
-
-static unsigned
-atomic_xchg(volatile unsigned *loc, unsigned new)
-{
-  unsigned long res;
-  asm ("xchg %0, %1\n"
-       : "=r" (res),
-	 "=m" (*loc)
-       : "m" (*loc),
-	 "0" (new)
-       : "memory");
-  return res;
-}
-
-static int
-futex(volatile unsigned *slot, int cmd, unsigned val, const struct timespec *ts,
-      int *uaddr, int val2)
-{
-  return syscall(SYS_futex, slot, cmd, val, ts, uaddr, val2);
-}
-
-static void
-futex_wait_while_equal(volatile unsigned *slot, unsigned val)
-{
-  assert((unsigned long)slot % 4 == 0);
-  if (futex(slot, FUTEX_WAIT, val, NULL, NULL, 0) < 0 && errno != EAGAIN)
-    err(1, "futex_wait");
-}
-
-static void
-futex_wake(volatile unsigned *slot)
-{
-  if (futex(slot, FUTEX_WAKE, 1, NULL, NULL, 0) < 0)
-    err(1, "futex_wake");
-}
 
 struct msg_header {
 #define MH_FLAG_READY 1
@@ -403,6 +356,7 @@ run_parent(test_data *td)
   /* Tell child to go away */
   mh = td->data + mask_ring_index(next_tx_offset);
   mh->size_and_flags = MH_FLAG_READY | MH_FLAG_STOP;
+  futex_wake(&mh->size_and_flags);
 }
 
 #ifdef USE_MWAIT

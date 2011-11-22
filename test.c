@@ -24,6 +24,7 @@
  */
 
 #include <sys/stat.h>
+#include <assert.h>
 #include <unistd.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -42,6 +43,32 @@
 #include "test.h"
 #include "xutil.h"
 
+static void
+wait_for_children_to_finish(void)
+{
+  int status, rv;
+
+  /* Make sure the child really does go away when it's no longer
+     needed. */
+  while (1) {
+    rv = waitpid(-1, &status, 0);
+    assert(rv != 0);
+    if (rv < 0) {
+      if (errno == ECHILD)
+	break;
+      err(1, "waitpid()");
+    }
+    if (WIFSIGNALED(status))
+      errx(1, "child killed by signal %d", WTERMSIG(status));
+    if (WIFEXITED(status)) {
+      if (WEXITSTATUS(status) != 0)
+	errx(1, "child exited with status %d", WEXITSTATUS(status));
+    } else {
+      errx(1, "unexpected status %x from waitpid", status);
+    }
+  }
+}
+
 /* Execute a test with as many parallel iterations as requested */
 void
 run_test(int argc, char *argv[], test_t *test)
@@ -50,9 +77,9 @@ run_test(int argc, char *argv[], test_t *test)
   int first_cpu, second_cpu;
   size_t count;
   int size, parallel;
-  pid_t pid;
   char *output_dir;
   int mode;
+
   parse_args(argc, argv, &per_iter_timings, &size, &count, &first_cpu, &second_cpu, &parallel, &output_dir, &mode);
 
   if (mkdir(output_dir, 0755) < 0 && errno != EEXIST)
@@ -84,13 +111,7 @@ run_test(int argc, char *argv[], test_t *test)
         setaffinity(second_cpu);
         test->run_parent(td);
 
-	/* Make sure the child really does go away when it's no longer
-	   needed. */
-	kill(pid2, 9);
-        while (waitpid(-1, NULL, 0)) {
-          if (errno == ECHILD)
-            break;
-        }
+	wait_for_children_to_finish();
 
         exit (0);
       }
@@ -99,9 +120,5 @@ run_test(int argc, char *argv[], test_t *test)
       parallel--;
     }
   }
-  /* Wait for all the spawned tests to finish */
-  while ((pid = waitpid(-1, NULL, 0))) {
-    if (errno == ECHILD)
-      break;
-  }
+  wait_for_children_to_finish();
 }
