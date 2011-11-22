@@ -508,30 +508,22 @@ run_child(test_data *td)
 {
 	struct shmem_pipe *sp = td->data;
 	unsigned char incoming[EXTENT_BUFFER_SIZE];
-	unsigned char outgoing[EXTENT_BUFFER_SIZE];
+	struct extent outgoing_extents[EXTENT_BUFFER_SIZE/sizeof(struct extent)];
 	struct pollfd pfd[2];
 	int incoming_bytes = 0;
-	unsigned outgoing_cons = 0, outgoing_prod = 0;
+	unsigned nr_outgoing_extents = 0;
 	int i;
 	int j;
 	int k;
-	bool write_closed = false;
 	void *rx_buf = malloc(td->size);
 
 	close(sp->child_to_parent_read);
 	close(sp->parent_to_child_write);
 	while (1) {
 		i = 0;
-		if (incoming_bytes < sizeof(incoming) &&
-		    outgoing_prod - outgoing_cons < sizeof(outgoing) - sizeof(struct extent)) {
+		if (incoming_bytes < sizeof(incoming)) {
 			pfd[i].fd = sp->parent_to_child_read;
 			pfd[i].events = POLLIN|POLLHUP|POLLRDHUP;
-			pfd[i].revents = 0;
-			i++;
-		}
-		if (outgoing_prod != outgoing_cons) {
-			pfd[i].fd = sp->child_to_parent_write;
-			pfd[i].events = POLLOUT;
 			pfd[i].revents = 0;
 			i++;
 		}
@@ -552,59 +544,35 @@ run_child(test_data *td)
 					err(1, "child read");
 				incoming_bytes += k;
 			} else {
-				int to_copy;
-
-				assert(pfd[j].fd == sp->child_to_parent_write);
-				to_copy = outgoing_prod - outgoing_cons;
-				if (outgoing_cons / sizeof(outgoing) != outgoing_prod / sizeof(outgoing)) {
-					assert(to_copy >= sizeof(outgoing) - (outgoing_cons % sizeof(outgoing)));
-					to_copy = sizeof(outgoing) - (outgoing_cons % sizeof(outgoing));
-				}
-				k = write(sp->child_to_parent_write,
-					  outgoing + outgoing_cons % sizeof(outgoing),
-					  to_copy);
-				if (k < 0)
-					err(1, "child write");
-				if (k == 0) {
-					printf("Child write pipe is closed!\n");
-					abort();
-					write_closed = true;
-				}
-				outgoing_cons += k;
+				abort();
 			}
 		}
 
 		for (i = 0;
-		     i < incoming_bytes / sizeof(struct extent) &&
-			     outgoing_prod - outgoing_cons < sizeof(outgoing) - sizeof(struct extent);
+		     i < incoming_bytes / sizeof(struct extent);
 		     i++) {
 			struct extent *inc = &((struct extent *)incoming)[i];
-			struct extent out;
+			struct extent *out;
 			assert(inc->base <= ring_size);
 			assert(inc->base + inc->size <= ring_size);
 			consume_message(sp->ring + inc->base, inc->size, rx_buf);
-			out = *inc;
-
-			if ((outgoing_prod + sizeof(out)) / sizeof(outgoing) == outgoing_prod / sizeof(outgoing)) {
-				memcpy(outgoing + (outgoing_prod % sizeof(outgoing)),
-				       &out,
-				       sizeof(out));
+			out = &outgoing_extents[nr_outgoing_extents-1];
+			/* Try to reuse previous outgoing extent */
+			if (nr_outgoing_extents != 0 &&
+			    out->base + out->size == inc->base) {
+				out->size += inc->size;
 			} else {
-				memcpy(outgoing + (outgoing_prod % sizeof(outgoing)),
-				       &out,
-				       sizeof(outgoing) - (outgoing_prod % sizeof(outgoing)));
-				memcpy(outgoing,
-				       (void *)((unsigned long)&out + sizeof(outgoing) - (outgoing_prod % sizeof(outgoing))),
-				       sizeof(out) - (sizeof(outgoing) - (outgoing_prod % sizeof(outgoing))));
+				outgoing_extents[nr_outgoing_extents] = *inc;
+				nr_outgoing_extents++;
 			}
-
-			outgoing_prod += sizeof(out);
 		}
 		memmove(incoming, incoming + i * sizeof(struct extent), incoming_bytes - i * sizeof(struct extent));
 		incoming_bytes -= i * sizeof(struct extent);
 
-		if (write_closed)
-			outgoing_prod = outgoing_cons;
+		xwrite(sp->child_to_parent_write,
+		       outgoing_extents,
+		       nr_outgoing_extents * sizeof(struct extent));
+		nr_outgoing_extents = 0;
 	}
 
 eof:
