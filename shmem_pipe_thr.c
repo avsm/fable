@@ -514,6 +514,9 @@ run_child(test_data *td)
 	int i;
 	int k;
 	void *rx_buf = malloc(td->size);
+	unsigned outgoing_extent_bytes;
+
+	outgoing_extent_bytes = 0;
 
 	close(sp->child_to_parent_read);
 	close(sp->parent_to_child_write);
@@ -544,14 +547,18 @@ run_child(test_data *td)
 				outgoing_extents[nr_outgoing_extents] = *inc;
 				nr_outgoing_extents++;
 			}
+			outgoing_extent_bytes += inc->size;
 		}
 		memmove(incoming, incoming + i * sizeof(struct extent), incoming_bytes - i * sizeof(struct extent));
 		incoming_bytes -= i * sizeof(struct extent);
 
-		xwrite(sp->child_to_parent_write,
-		       outgoing_extents,
-		       nr_outgoing_extents * sizeof(struct extent));
-		nr_outgoing_extents = 0;
+		if (outgoing_extent_bytes > ring_size / 8) {
+			xwrite(sp->child_to_parent_write,
+			       outgoing_extents,
+			       nr_outgoing_extents * sizeof(struct extent));
+			nr_outgoing_extents = 0;
+			outgoing_extent_bytes = 0;
+		}
 	}
 
 eof:
