@@ -3,7 +3,7 @@ LDFLAGS+=-lm
 
 .PHONY: all clean run
 
-all: tcp_lat tcp_thr tcp_nodelay_thr tcp_nodelay_lat pipe_lat pipe_thr unix_lat unix_thr mempipe_lat mempipe_thr mempipe_thr_sos22 vmsplice_pipe_thr summarise_tsc_counters 
+all: tcp_lat tcp_thr tcp_nodelay_thr tcp_nodelay_lat pipe_lat pipe_thr unix_lat unix_thr mempipe_lat mempipe_thr mempipe_thr_sos22 vmsplice_pipe_thr summarise_tsc_counters shmem_pipe_thr
 
 %_lat: atomicio.o test.o xutil.o %_lat.o
 	$(CC) -lrt $(CFLAGS) -o $@ $^
