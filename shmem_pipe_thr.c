@@ -389,32 +389,57 @@ init_test(test_data *td)
 	sp->first_alloc->end = ring_size;
 }
 
+#ifdef SOS22_MEMSET
+static void mymemset(void* buf, int byte, size_t count) {
+  int clobber;
+  assert(count % 8 == 0);
+  asm volatile ("rep stosq\n"
+		: "=c" (clobber)
+		: "a" ((unsigned long)(byte & 0xff) * 0x0101010101010101ul),
+		  "D" (buf),
+		  "0" (count / 8)
+		: "memory");
+}
+#define real_memset mymemset
+#else
+#define real_memset memset
+#endif
+
 static void
-populate_message(void *buf, int size)
+set_message(void *data, unsigned size, int byte)
 {
-	static unsigned cntr;
-	unsigned *b = buf;
-	int i;
-	for (i = 0; i < size / 4; i++)
-		b[i] = cntr++;
+	real_memset(data, byte, size);
 }
 
 static void
-consume_message(const void *buf, int size)
+copy_message(void *data, const void *inbuf, unsigned size)
+{
+	memcpy(data, inbuf, size);
+}
+
+static void
+populate_message(void *buf, int size, int mode, void *local_buf)
 {
 	static unsigned cntr;
-	const unsigned *b = buf;
-	int i;
-	unsigned tot = 0;
-	for (i = 0; i < size / 4; i++) {
-		assert(b[i] == cntr++);
-		tot += b[i];
+	switch (mode) {
+	case MODE_DATAINPLACE:
+		set_message(buf, size, cntr);
+		break;
+	case MODE_DATAEXT:
+		memset(local_buf, cntr, size);
+	case MODE_NODATA:
+		copy_message(buf, local_buf, size);
+		break;
+	default:
+		abort();
 	}
-	/* Stop the compiler optimising it away to nothing. */
-	asm volatile (""
-		      :
-		      : "r" (tot)
-		);
+	cntr++;
+}
+
+static void
+consume_message(const void *buf, int size, void *outbuf)
+{
+	memcpy(outbuf, buf, size);
 }
 
 static void
@@ -432,6 +457,7 @@ run_child(test_data *td)
 	bool write_closed = false;
 	int incoming_sequence = 0;
 	int outgoing_sequence = 0xf0010000;
+	void *rx_buf = malloc(td->size);
 
 	close(sp->child_to_parent_read);
 	close(sp->parent_to_child_write);
@@ -499,7 +525,7 @@ run_child(test_data *td)
 			assert(inc->base + inc->size <= ring_size);
 			assert(inc->sequence == incoming_sequence);
 			incoming_sequence++;
-			consume_message(sp->ring + inc->base, inc->size);
+			consume_message(sp->ring + inc->base, inc->size, rx_buf);
 			out = *inc;
 			out.sequence = outgoing_sequence;
 
@@ -559,7 +585,7 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 }
 
 static void
-send_a_message(struct shmem_pipe *sp, int message_size)
+send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf)
 {
 	static int sequence;
 	unsigned long offset;
@@ -568,7 +594,7 @@ send_a_message(struct shmem_pipe *sp, int message_size)
 	while ((offset = alloc_shared_space(sp, message_size)) == ALLOC_FAILED)
 		wait_for_returned_buffers(sp);
 
-	populate_message(sp->ring + offset, message_size);
+	populate_message(sp->ring + offset, message_size, mode, buf);
 
 	ext.sequence = sequence;
 	sequence++;
@@ -601,12 +627,13 @@ static void
 run_parent(test_data *td)
 {
 	struct shmem_pipe *sp = td->data;
+	void *local_buf = malloc(td->size);
 
 	close(sp->child_to_parent_write);
 	close(sp->parent_to_child_read);
 
 	thr_test(
-		send_a_message(sp, td->size),
+		send_a_message(sp, td->size, td->mode, local_buf),
 		flush_buffers(sp),
 		td);
 }
@@ -614,7 +641,11 @@ run_parent(test_data *td)
 int
 main(int argc, char *argv[])
 {
-	test_t t = { "shmem_pipe", init_test, run_parent, run_child };
+	test_t t = { "shmem_pipe"
+#ifdef SOS22_MEMSET
+		     "_sos22"
+#endif
+		     , init_test, run_parent, run_child };
 	char *_ring_order = getenv("SHMEM_RING_ORDER");
 	if (_ring_order) {
 		int as_int;
