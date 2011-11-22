@@ -18,6 +18,8 @@
 #include "test.h"
 #include "xutil.h"
 
+#undef UNSAFE_ALLOCATOR
+
 #define PAGE_ORDER 12
 #define CACHE_LINE_SIZE 64
 static unsigned ring_order = 14;
@@ -35,9 +37,11 @@ static unsigned ring_order = 14;
 
 struct shmem_pipe {
 	void *ring;
+#ifndef UNSAFE_ALLOCATOR
 	struct alloc_node *first_alloc, *next_free_alloc, *last_freed_node;
 #ifndef NDEBUG
 	int nr_alloc_nodes;
+#endif
 #endif
 
 	int child_to_parent_read, child_to_parent_write;
@@ -56,6 +60,25 @@ struct extent {
 #endif
 };
 
+#ifdef UNSAFE_ALLOCATOR
+static unsigned shared_consumer, shared_producer;
+static unsigned
+alloc_shared_space(struct shmem_pipe *sp, unsigned size)
+{
+	unsigned res;
+	if (shared_producer - shared_consumer > ring_size - size)
+		return ALLOC_FAILED;
+	res = shared_producer % ring_size;
+	shared_producer += size;
+	return res;
+}
+static void
+release_shared_space(struct shmem_pipe *sp, unsigned base, unsigned size)
+{
+	assert(shared_consumer == base);
+	shared_consumer += size;
+}
+#else
 /* Our allocation structure is a simple linked list.  That's pretty
    stupid, *except* that the allocation pattern is almost always a
    very simple queue, so it becomes very simple.  i.e. we release
@@ -405,7 +428,7 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 	/* And we're done. */
 	sanity_check(sp);
 }
-
+#endif
 static void
 init_test(test_data *td)
 {
@@ -422,10 +445,12 @@ init_test(test_data *td)
 	sp->parent_to_child_write = pip[1];
 	td->data = sp;
 
+#ifndef UNSAFE_ALLOCATOR
 	sp->first_alloc = calloc(sizeof(*sp->first_alloc), 1);
 	sp->first_alloc->is_free = 1;
 	sp->first_alloc->end = ring_size;
 	DBG(sp->nr_alloc_nodes = 1);
+#endif
 }
 
 #ifdef SOS22_MEMSET
