@@ -43,6 +43,12 @@
 #include <sys/mman.h>
 #include <errno.h>
 
+#include <asm/mman.h>
+
+#if defined(USE_HUGE_PAGES) && !defined(MAP_HUGETLB)
+#error No hugetlb support?
+#endif
+
 #include "test.h"
 #include "xutil.h"
 
