@@ -106,8 +106,12 @@ sanity_check(const struct shmem_pipe *sp)
 	}
 	if (!found_nf)
 		assert(!sp->next_free_alloc);
+	else
+		assert(sp->next_free_alloc->is_free);
 	if (!found_lf)
 		assert(!sp->last_freed_node);
+	else
+		assert(sp->last_freed_node->is_free);
 	assert(n == sp->nr_alloc_nodes);
 }
 #else
@@ -213,6 +217,10 @@ alloc_shared_space(struct shmem_pipe *sp, unsigned size)
 			f->next->start = size;
 			sp->first_alloc = f;
 		}
+		if (sp->last_freed_node == sp->first_alloc)
+			sp->last_freed_node = sp->first_alloc->next;
+		if (sp->next_free_alloc == sp->first_alloc)
+			sp->next_free_alloc = sp->first_alloc->next;
 		sanity_check(sp);
 		return 0;
 	} else {
@@ -264,7 +272,7 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 				lan->end = X->end;
 				lan->next = Y;
 				if (X == sp->next_free_alloc)
-					sp->next_free_alloc = NULL;
+					sp->next_free_alloc = lan;
 				DBG(sp->nr_alloc_nodes--);
 				free(X);
 			} else {
@@ -274,7 +282,7 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 				lan->next = NULL;
 			}
 			if (next == sp->next_free_alloc)
-				sp->next_free_alloc = NULL;
+				sp->next_free_alloc = lan;
 			DBG(sp->nr_alloc_nodes--);
 			free(next);
 		}
@@ -317,9 +325,9 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 				if (lan->next)
 					lan->next->prev = lan;
 				if (sp->last_freed_node == t)
-					sp->last_freed_node = NULL;
+					sp->last_freed_node = lan;
 				if (sp->next_free_alloc == t)
-					sp->next_free_alloc = NULL;
+					sp->next_free_alloc = lan;
 				DBG(sp->nr_alloc_nodes--);
 				free(t);
 			}
@@ -358,6 +366,8 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 			lan->end = start;
 			DBG(sp->nr_alloc_nodes++);
 		}
+		if (!sp->next_free_alloc)
+			sp->next_free_alloc = lan->next;
 		sp->last_freed_node = lan->next;
 		sanity_check(sp);
 		return;
@@ -388,6 +398,9 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 	lan->end = start;
 
 	DBG(sp->nr_alloc_nodes += 2);
+
+	if (!sp->next_free_alloc)
+		sp->next_free_alloc = a;
 
 	/* And we're done. */
 	sanity_check(sp);
