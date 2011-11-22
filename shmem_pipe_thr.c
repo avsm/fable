@@ -20,16 +20,25 @@
 
 #define PAGE_ORDER 12
 #define CACHE_LINE_SIZE 64
-static unsigned ring_order = 9;
+static unsigned ring_order = 14;
 #define ring_size (1ul << (PAGE_ORDER + ring_order))
 
 #define EXTENT_BUFFER_SIZE 4096
 
 #define ALLOC_FAILED ((unsigned)-1)
 
+#ifdef NDEBUG
+#define DBG(x) do {} while (0)
+#else
+#define DBG(x) do { x; } while (0)
+#endif
+
 struct shmem_pipe {
 	void *ring;
 	struct alloc_node *first_alloc, *next_free_alloc, *last_freed_node;
+#ifndef NDEBUG
+	int nr_alloc_nodes;
+#endif
 
 	int child_to_parent_read, child_to_parent_write;
 	int parent_to_child_read, parent_to_child_write;
@@ -42,7 +51,9 @@ struct shmem_pipe {
 struct extent {
 	unsigned base;
 	unsigned size;
+#ifndef NDEBUG
 	int sequence;
+#endif
 };
 
 /* Our allocation structure is a simple linked list.  That's pretty
@@ -64,11 +75,13 @@ sanity_check(const struct shmem_pipe *sp)
 {
 	const struct alloc_node *cursor;
 	int found_nf = 0, found_lf = 0;
+	int n = 0;
 	assert(sp->first_alloc);
 	assert(sp->first_alloc->start == 0);
 	for (cursor = sp->first_alloc;
 	     cursor;
 	     cursor = cursor->next) {
+		n++;
 		if (cursor == sp->first_alloc)
 			assert(!cursor->prev);
 		else
@@ -95,6 +108,7 @@ sanity_check(const struct shmem_pipe *sp)
 		assert(!sp->next_free_alloc);
 	if (!found_lf)
 		assert(!sp->last_freed_node);
+	assert(n == sp->nr_alloc_nodes);
 }
 #else
 static void
@@ -130,6 +144,7 @@ alloc_shared_space(struct shmem_pipe *sp, unsigned size)
 					sp->next_free_alloc->next->next->prev = sp->next_free_alloc->prev;
 				}
 				struct alloc_node *p = sp->next_free_alloc->next->next;
+				DBG(sp->nr_alloc_nodes--);
 				free(sp->next_free_alloc->next);
 				if (sp->next_free_alloc->next == sp->last_freed_node)
 					sp->last_freed_node = NULL;
@@ -145,6 +160,7 @@ alloc_shared_space(struct shmem_pipe *sp, unsigned size)
 			}
 			if (sp->next_free_alloc == sp->last_freed_node)
 				sp->last_freed_node = NULL;
+			DBG(sp->nr_alloc_nodes--);
 			free(sp->next_free_alloc);
 			sp->next_free_alloc = NULL;
 		}
@@ -182,11 +198,13 @@ alloc_shared_space(struct shmem_pipe *sp, unsigned size)
 					f->next->prev = f;
 				if (sp->last_freed_node == t)
 					sp->last_freed_node = NULL;
+				DBG(sp->nr_alloc_nodes--);
 				free(t);
 			}
 			f->is_free = 0;
 		} else {
 			f = calloc(sizeof(struct alloc_node), 1);
+			DBG(sp->nr_alloc_nodes++);
 			f->next = sp->first_alloc;
 			f->start = 0;
 			f->end = size;
@@ -247,6 +265,7 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 				lan->next = Y;
 				if (X == sp->next_free_alloc)
 					sp->next_free_alloc = NULL;
+				DBG(sp->nr_alloc_nodes--);
 				free(X);
 			} else {
 				/* Just turn LAN->free1->NULL into
@@ -256,6 +275,7 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 			}
 			if (next == sp->next_free_alloc)
 				sp->next_free_alloc = NULL;
+			DBG(sp->nr_alloc_nodes--);
 			free(next);
 		}
 		sanity_check(sp);
@@ -300,6 +320,7 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 					sp->last_freed_node = NULL;
 				if (sp->next_free_alloc == t)
 					sp->next_free_alloc = NULL;
+				DBG(sp->nr_alloc_nodes--);
 				free(t);
 			}
 			sanity_check(sp);
@@ -313,6 +334,7 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 			lan->next = sp->first_alloc;
 			sp->first_alloc = lan;
 			sp->last_freed_node = sp->first_alloc;
+			DBG(sp->nr_alloc_nodes++);
 			sanity_check(sp);
 		}
 		return;
@@ -334,6 +356,7 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 			t->end = start + size;
 			lan->next = t;
 			lan->end = start;
+			DBG(sp->nr_alloc_nodes++);
 		}
 		sp->last_freed_node = lan->next;
 		sanity_check(sp);
@@ -364,6 +387,8 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 	lan->next = a;
 	lan->end = start;
 
+	DBG(sp->nr_alloc_nodes += 2);
+
 	/* And we're done. */
 	sanity_check(sp);
 }
@@ -387,6 +412,7 @@ init_test(test_data *td)
 	sp->first_alloc = calloc(sizeof(*sp->first_alloc), 1);
 	sp->first_alloc->is_free = 1;
 	sp->first_alloc->end = ring_size;
+	DBG(sp->nr_alloc_nodes = 1);
 }
 
 #ifdef SOS22_MEMSET
@@ -527,7 +553,9 @@ run_child(test_data *td)
 			incoming_sequence++;
 			consume_message(sp->ring + inc->base, inc->size, rx_buf);
 			out = *inc;
+#ifndef NDEBUG
 			out.sequence = outgoing_sequence;
+#endif
 
 			if ((outgoing_prod + sizeof(out)) / sizeof(outgoing) == outgoing_prod / sizeof(outgoing)) {
 				memcpy(outgoing + (outgoing_prod % sizeof(outgoing)),
@@ -587,7 +615,9 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 static void
 send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf)
 {
+#ifndef NDEBUG
 	static int sequence;
+#endif
 	unsigned long offset;
 	struct extent ext;
 
@@ -596,12 +626,17 @@ send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf)
 
 	populate_message(sp->ring + offset, message_size, mode, buf);
 
+#ifndef NDEBUG
 	ext.sequence = sequence;
 	sequence++;
+#endif
+
 	ext.base = offset;
 	ext.size = message_size;
 
 	xwrite(sp->parent_to_child_write, &ext, sizeof(ext));
+
+	assert(sp->nr_alloc_nodes <= 3);
 }
 
 static void
