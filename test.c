@@ -69,6 +69,170 @@ wait_for_children_to_finish(void)
   }
 }
 
+static void stosmemset(void* buf, int byte, size_t count) {
+  int clobber;
+  assert(count % 8 == 0);
+  asm volatile ("rep stosq\n"
+		: "=c" (clobber)
+		: "a" ((unsigned long)(byte & 0xff) * 0x0101010101010101ul),
+		  "D" (buf),
+		  "0" (count / 8)
+		: "memory");
+}
+
+static int repmemcmp(void* buf, int byte, size_t count) {
+
+  unsigned long clobber;
+  void* clobber2;
+  char result;
+  assert(count % 8 == 0);
+  asm ("repe scasq\n"
+       "setne %%al\n"
+       : "=a" (result),
+	 "=c" (clobber),
+	 "=D" (clobber2)
+       : "a" ((unsigned long)(byte & 0xff) * 0x0101010101010101ul),
+	 "c" (count / 8),
+	 "D" (buf)
+       );
+  return result;
+       
+}
+
+void parent_main(test_t* test, test_data* td, int is_latency_test) {
+
+  char* private_buffer = xmalloc(td->size);
+  struct timeval start;
+  struct timeval stop;						
+  unsigned long *iter_cycles;						
+  unsigned long delta;	
+  unsigned long t;
+  struct iovec private_vec = { .iov_base = private_buffer, .iov_len = td->size };
+				
+  test->init_parent(td);
+    									
+  /* calm compiler */							
+  iter_cycles = NULL;							
+									
+  if (td->per_iter_timings) {						
+    iter_cycles = calloc(sizeof(iter_cycles[0]), td->count);		
+    if (!iter_cycles)							
+      err(1, "calloc");						
+  }									
+									
+  gettimeofday(&start, NULL);						
+  for (int i = 0; i < td->count; i++) {	
+    if(td->per_iter_timings)
+      t = rdtsc();
+
+    struct iovec* write_bufs;
+    int n_write_bufs;
+    struct iovec* produce_bufs;
+    int n_produce_bufs;
+    write_bufs = test->get_write_buffer(td, td->size, &n_write_bufs);
+    if(td->write_in_place) {
+      produce_bufs = write_bufs;
+      n_produce_bufs = n_write_bufs;
+    }
+    else {
+      produce_bufs = &private_vec;
+      n_produce_bufs = 1;
+    }
+
+    for(int j = 0; j < n_produce_bufs; j++) {
+      if(td->produce_method == PRODUCE_GLIBC_MEMSET)
+	memset(produce_bufs[j].iov_base, (char)i, produce_bufs[j].iov_len);
+      else if(td->produce_method == PRODUCE_STOS_MEMSET)
+	stosmemset(produce_bufs[j].iov_base, (char)i, produce_bufs[j].iov_len);
+      else if(td->produce_method == PRODUCE_LOOP) {
+	for(int k = 0; k < produce_bufs[j].iov_len; k++)
+	  ((char*)produce_bufs[j].iov_base)[k] = (char)i;
+      }
+      else {
+	assert(0 && "Bad produce method!");
+      }
+    }
+
+    if(!td->write_in_place) {
+      int offset = 0;
+      for(int j = 0; j < n_produce_bufs; j++) {
+	memcpy(((char*)write_bufs[j].iov_base) + offset, private_buffer + offset, write_bufs[j].iov_len);
+	offset += write_bufs[j].iov_len;
+      }
+    }
+
+    test->release_write_buffer(td, write_bufs, n_write_bufs);
+
+    if(td->per_iter_timings)
+      iter_cycles[i] = rdtsc() - t;					
+  }									
+
+  test->finish_parent(td);
+
+  gettimeofday(&stop, NULL);						
+									
+  delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1000000 +		
+	   stop.tv_usec - start.tv_usec);				
+									
+  if (is_latency_test)								
+    logmsg(td,							
+	   "headline",						
+	   "%s %d %" PRId64 " %fs\n", td->name, td->size, td->count,
+	   delta / (td->count * 1e6));				
+  else								
+    logmsg(td,							
+	   "headline",						
+	   "%s %d %d %d %d %" PRId64 " %" PRId64 " Mbps\n", td->name, td->size, 
+	   td->produce_method, td->write_in_place, td->read_in_place, td->count,							
+	   ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); 
+									
+  if (td->per_iter_timings)						
+    dump_tsc_counters(td, iter_cycles, td->count);
+
+}
+
+
+
+void child_main(test_t* test, test_data* td) {
+
+  char* private_buffer = xmalloc(td->size);
+  struct iovec private_vec = { .iov_base = private_buffer, .iov_len = td->size };
+
+  test->init_child(td);
+
+  for(int i = 0; i < td->count; i++) {
+
+    struct iovec* check_bufs;
+    int n_check_bufs;
+    struct iovec* read_bufs;
+    int n_read_bufs;
+    read_bufs = test->get_read_buffer(td, td->size, &n_read_bufs);
+    if(td->read_in_place) {
+      check_bufs = read_bufs;
+      n_check_bufs = n_read_bufs;
+    }
+    else {
+      check_bufs = &private_vec;
+      n_check_bufs = 1;
+      for(int j = 0, offset = 0; j < n_read_bufs; j++, offset += read_bufs[j].iov_len) {
+	memcpy(private_buffer + offset, read_bufs[j].iov_base, read_bufs[j].iov_len);
+      }
+    }
+
+    for(int j = 0; j < n_check_bufs; j++) {
+      if(repmemcmp(check_bufs[j].iov_base, i, check_bufs[j].iov_len))
+	err(1, "bad data");
+    }
+
+    test->release_read_buffer(td, read_bufs, n_read_bufs);
+
+  }
+
+  if(test->finish_child)
+    test->finish_child(td);
+
+}
+
 /* Execute a test with as many parallel iterations as requested */
 void
 run_test(int argc, char *argv[], test_t *test)
@@ -78,9 +242,9 @@ run_test(int argc, char *argv[], test_t *test)
   size_t count;
   int size, parallel;
   char *output_dir;
-  int mode;
+  int write_in_place, read_in_place, produce_method;
 
-  parse_args(argc, argv, &per_iter_timings, &size, &count, &first_cpu, &second_cpu, &parallel, &output_dir, &mode);
+  parse_args(argc, argv, &per_iter_timings, &size, &count, &first_cpu, &second_cpu, &parallel, &output_dir, &write_in_place, &read_in_place, &produce_method);
 
   if (mkdir(output_dir, 0755) < 0 && errno != EEXIST)
     err(1, "creating directory %s", output_dir);
@@ -94,14 +258,17 @@ run_test(int argc, char *argv[], test_t *test)
       td->num = parallel;
       td->size = size;
       td->count = count;
+      td->write_in_place = write_in_place;
+      td->read_in_place = read_in_place;
+      td->produce_method = produce_method;
       td->per_iter_timings = per_iter_timings;
-      td->mode = mode;
+      //      td->mode = mode;
       /* Test-specific init */
       test->init_test(td); 
       pid_t pid2 = fork ();
       if (!pid2) { /* child2 */
         setaffinity(first_cpu);
-        test->run_child(td);
+	child_main(test, td);
         exit (0);
       } else { /* parent2 */
 	td->output_dir = output_dir; /* Do this here because the child
@@ -109,7 +276,7 @@ run_test(int argc, char *argv[], test_t *test)
 					anything. */
 	td->name = test->name;
         setaffinity(second_cpu);
-        test->run_parent(td);
+	parent_main(test, td, test->is_latency_test);
 
 	wait_for_children_to_finish();
 

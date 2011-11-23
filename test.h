@@ -25,9 +25,9 @@
 
 #include <stdio.h>
 
-#define MODE_NODATA 0
-#define MODE_DATAINPLACE 1
-#define MODE_DATAEXT 2
+#define PRODUCE_GLIBC_MEMSET 1
+#define PRODUCE_STOS_MEMSET 2
+#define PRODUCE_LOOP 3
 
 typedef struct {
   int num;
@@ -37,17 +37,24 @@ typedef struct {
   void *data;
   const char *output_dir;
   const char *name;
-  int mode;
+  int write_in_place;
+  int read_in_place;
+  int produce_method;
 } test_data;
 
 typedef struct {
   const char *name;
+  int is_latency_test;
   void (*init_test)(test_data *);
-  void (*run_parent)(test_data *);
-  void (*run_child)(test_data *);
+  void (*init_parent)(test_data *);
+  void (*finish_parent)(test_data *);
+  void (*init_child)(test_data *);
+  void (*finish_child)(test_data *);
+  struct iovec* (*get_write_buffer)(test_data *, int size, int* n_vecs);
+  void (*release_write_buffer)(test_data *, struct iovec* vecs, int n_vecs);
+  struct iovec* (*get_read_buffer)(test_data *, int size, int* n_vecs);
+  void (*release_read_buffer)(test_data *, struct iovec* vecs, int n_vecs);
 } test_t;
-
-void run_test(int argc, char *argv[], test_t *test);
 
 static inline unsigned long
 rdtsc(void)
@@ -58,6 +65,9 @@ rdtsc(void)
 	       );
   return (d << 32) | a;
 }
+
+void run_test(int argc, char *argv[], test_t *test);
+
 void dump_tsc_counters(test_data *td, unsigned long *counts, int nr_samples);
 
 void logmsg(test_data *td,
@@ -65,59 +75,3 @@ void logmsg(test_data *td,
 	    const char *fmt,
 	    ...)
   __attribute__((format (printf, 3, 4)));
-
-#define lat_or_thr_test(is_lat, body, finish, td)			\
-  do {									\
-    struct timeval start;						\
-    struct timeval stop;						\
-    unsigned long *iter_cycles;						\
-    unsigned long delta;						\
-    int i;								\
-    									\
-    /* calm compiler */							\
-    iter_cycles = NULL;							\
-									\
-    if (td->per_iter_timings) {						\
-      iter_cycles = calloc(sizeof(iter_cycles[0]), td->count);		\
-      if (!iter_cycles)							\
-	err(1, "calloc");						\
-    }									\
-									\
-    gettimeofday(&start, NULL);						\
-    if (!td->per_iter_timings) {					\
-      for (i = 0; i < td->count; i++) {					\
-	body;								\
-      }									\
-    } else {								\
-      for (i = 0; i < td->count; i++) {					\
-	unsigned long t = rdtsc();					\
-	body;								\
-	iter_cycles[i] = rdtsc() - t;					\
-      }									\
-    }									\
-    finish;								\
-    gettimeofday(&stop, NULL);						\
-									\
-    delta = ((stop.tv_sec - start.tv_sec) * (int64_t) 1000000 +		\
-	     stop.tv_usec - start.tv_usec);				\
-									\
-    if (is_lat)								\
-      logmsg(td,							\
-	     "headline",						\
-	     "%s %d %" PRId64 " %fs\n", td->name, td->size, td->count,	\
-	     delta / (td->count * 1e6));				\
-    else								\
-      logmsg(td,							\
-	     "headline",						\
-	     "%s %d %d %" PRId64 " %" PRId64 " Mbps\n", td->name, td->size, td->mode, \
-	     td->count,							\
-	     ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); \
-									\
-    if (td->per_iter_timings)						\
-      dump_tsc_counters(td, iter_cycles, td->count);			\
-  } while (0)
-
-#define latency_test(body, td)			                        \
-  lat_or_thr_test(1, body, do {} while (0), td)
-#define thr_test(body, finish, td)	                                \
-  lat_or_thr_test(0, body, finish, td)

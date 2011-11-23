@@ -173,7 +173,7 @@ help(char *argv[])
 
 void
 parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, int *first_cpu, int *second_cpu,
-	   int *parallel, char **output_dir, int *mode)
+	   int *parallel, char **output_dir, int *write_in_place, int *read_in_place, int *produce_method)
 {
   int opt;
   *per_iter_timings = false;
@@ -183,8 +183,10 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
   *size = 1024;
   *count = 100;
   *output_dir = "results";
-  *mode = 0;
-  while((opt = getopt(argc, argv, "h?tp:a:b:s:c:o:m:")) != -1) {
+  *produce_method = 0;
+  *read_in_place = 0;
+  *write_in_place = 0;
+  while((opt = getopt(argc, argv, "h?tp:a:b:s:c:o:wrm:")) != -1) {
     switch(opt) {
      case 't':
       *per_iter_timings = true;
@@ -208,7 +210,13 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       *output_dir = optarg;
       break;
      case 'm':
-      *mode = atoi(optarg);
+      *produce_method = atoi(optarg);
+      break;
+     case 'r':
+      *read_in_place = 1;
+      break;
+     case 'w':
+      *write_in_place = 1;
       break;
      case '?':
      case 'h':
@@ -218,8 +226,14 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       help(argv);
     }
   }
-  fprintf(stderr, "size %d count %" PRId64 " first_cpu %d second_cpu %d parallel %d tsc %d output_dir %s\n",
-	  *size, *count, *first_cpu, *second_cpu, *parallel, *per_iter_timings,
+
+  if(!(*produce_method >= 1 && *produce_method <= 3)) {
+    fprintf(stderr, "Produce method (option -m) must be specified and between 1 and 3\n");
+    exit(1);
+  }
+
+  fprintf(stderr, "size %d count %" PRId64 " first_cpu %d second_cpu %d parallel %d tsc %d produce-method %d %s %s output_dir %s\n",
+	  *size, *count, *first_cpu, *second_cpu, *parallel, *per_iter_timings, *produce_method, *read_in_place ? "read-in-place" : "copy-read", *write_in_place ? "write-in-place" : "copy-write",
 	  *output_dir);
 }
 

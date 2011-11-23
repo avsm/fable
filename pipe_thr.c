@@ -37,6 +37,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <assert.h>
 
 #include "test.h"
 #include "xutil.h"
@@ -44,6 +45,7 @@
 typedef struct {
   int fds[2];
   int fin_fds[2];
+  struct iovec buffer;
 } pipe_state;
 
 static void
@@ -58,46 +60,72 @@ init_test(test_data *td)
 }
 
 static void
-run_child(test_data *td)
+init_local(test_data *td)
+{
+  pipe_state *ps = (pipe_state*)td->data;
+  ps->buffer.iov_base = xmalloc(td->size);
+  ps->buffer.iov_len = td->size;
+}
+
+static struct iovec*
+get_read_buf(test_data *td, int len, int* n_vecs)
 {
   pipe_state *ps = (pipe_state *)td->data;
-  void *buf = xmalloc(td->size);
-  int i;
-
-  for (i = 0; i < td->count; i++) {
-    xread(ps->fds[0], buf, td->size);
-  }
-  xwrite(ps->fin_fds[1], "X", 1);
+  xread(ps->fds[0], ps->buffer.iov_base, len);
+  *n_vecs = 1;
+  return &ps->buffer;
 }
 
 static void
-run_parent(test_data *td)
+release_read_buf(test_data *td, struct iovec* vecs, int n_vecs) {
+  pipe_state *ps = (pipe_state *)td->data;  
+  assert(n_vecs == 1);
+  assert(vecs == ps->buffer);
+}
+
+static void child_fin(test_data *td) {
+
+  pipe_state *ps = (pipe_state *)td->data;  
+  xwrite(ps->fin_fds[1], "X", 1);
+
+}
+
+static struct iovec* get_write_buf(test_data *td, int len, int* n_vecs) {
+  pipe_state *ps = (pipe_state *)td->data;
+  assert(len == td->size);
+  *n_vecs = 1;
+  return &ps->buffer;
+}
+
+static void
+release_write_buf(test_data *td, struct iovec* vecs, int n_vecs)
 {
   pipe_state *ps = (pipe_state *)td->data;
-  void *buf = xmalloc(td->size);
-  void *buf2 = xmalloc(td->size);
-  thr_test(
-    do {
-      if(td->mode == MODE_DATAINPLACE) {
-	memset(buf, i, td->size);
-      }
-      else if(td->mode == MODE_DATAEXT) {
-	memset(buf2, i, td->size);
-	memcpy(buf, buf2, td->size);
-      }
-      xwrite(ps->fds[1], buf, td->size); 
-    } while (0),
-    do {
-      xread(ps->fin_fds[0], buf, 1);
-    } while (0),
-    td
-  );
+  assert(vecs == ps->buffer && n_vecs == 1);
+  xwrite(ps->fds[1], vecs[0].iov_base, vecs[0].iov_len);
+}
+
+static void parent_fin(test_data *td) {
+  pipe_state *ps = (pipe_state*)td->data;
+  xread(ps->fin_fds[0], ps->buffer.iov_base, 1);
 }
 
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "pipe_thr", init_test, run_parent, run_child };
+  test_t t = { 
+    .name = "pipe_thr",
+    .is_latency_test = 0,
+    .init_test = init_test,
+    .init_parent = init_local,
+    .finish_parent = parent_fin,
+    .init_child = init_local,
+    .finish_child = child_fin,
+    .get_write_buffer = get_write_buf,
+    .release_write_buffer = release_write_buf,
+    .get_read_buffer = get_read_buf,
+    .release_read_buffer = release_read_buf
+  };
   run_test(argc, argv, &t);
   return 0;
 }

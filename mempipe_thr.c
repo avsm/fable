@@ -68,26 +68,6 @@
 static unsigned nr_shared_pages = 512;
 #define ring_size (PAGE_SIZE * nr_shared_pages)
 
-#ifdef SOS22_MEMSET
-#define real_memset mymemset
-#define test_name "mempipe_thr_sos22"
-
-static void mymemset(void* buf, int byte, size_t count) {
-  int clobber;
-  assert(count % 8 == 0);
-  asm volatile ("rep stosq\n"
-		: "=c" (clobber)
-		: "a" ((unsigned long)(byte & 0xff) * 0x0101010101010101ul),
-		  "D" (buf),
-		  "0" (count / 8)
-		: "memory");
-}
-
-#else
-#define real_memset memset
-#define test_name "mempipe_thr"
-#endif
-
 struct msg_header {
 #define MH_FLAG_READY 1
 #define MH_FLAG_STOP 2

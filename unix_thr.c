@@ -33,6 +33,7 @@
 #include <err.h>
 #include <inttypes.h>
 #include <netdb.h>
+#include <assert.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -43,6 +44,7 @@
 
 typedef struct {
   int sv[2];
+  struct iovec buffer;
 } test_state;
 
 static void
@@ -55,39 +57,72 @@ init_test(test_data *td)
 }
 
 static void
-run_child(test_data *td)
+init_local(test_data *td)
 {
-  test_state *ts = (test_state *)td->data;
-  void *buf = xmalloc(td->size);
-  int i;
+  test_state *ts = (test_state*)td->data;
+  ts->buffer.iov_base = xmalloc(td->size);
+  ts->buffer.iov_len = td->size;
+}
 
-  for (i = 0; i < td->count; i++) {
-    xread(ts->sv[1], buf, td->size);
-  }
-  xwrite(ts->sv[1], "X", 1);
+static struct iovec*
+get_read_buf(test_data *td, int len, int* n_vecs)
+{
+  test_state *ps = (test_state *)td->data;
+  xread(ps->sv[1], ps->buffer.iov_base, len);
+  *n_vecs = 1;
+  return &ps->buffer;
 }
 
 static void
-run_parent(test_data *td)
-{
-  test_state *ts = (test_state *)td->data;
-  void *buf = xmalloc(td->size);
+release_read_buf(test_data *td, struct iovec* vecs, int n_vecs) {
+  test_state *ps = (test_state *)td->data;  
+  assert(n_vecs == 1);
+  assert(vecs == &ps->buffer);
+}
 
-  thr_test(
-    do {
-      xwrite(ts->sv[0], buf, td->size); 
-    } while (0),
-    do {
-      xread(ts->sv[0], buf, 1);
-    } while (0),
-    td
-  );
+static void child_fin(test_data *td) {
+
+  test_state *ps = (test_state *)td->data;  
+  xwrite(ps->sv[1], "X", 1);
+
+}
+
+static struct iovec* get_write_buf(test_data *td, int len, int* n_vecs) {
+  test_state *ps = (test_state *)td->data;
+  assert(len == td->size);
+  *n_vecs = 1;
+  return &ps->buffer;
+}
+
+static void
+release_write_buf(test_data *td, struct iovec* vecs, int n_vecs)
+{
+  test_state *ps = (test_state *)td->data;
+  assert(vecs == &ps->buffer && n_vecs == 1);
+  xwrite(ps->sv[0], vecs[0].iov_base, vecs[0].iov_len);
+}
+
+static void parent_fin(test_data *td) {
+  test_state *ps = (test_state*)td->data;
+  xread(ps->sv[0], ps->buffer.iov_base, 1);
 }
 
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "unix_thr", init_test, run_parent, run_child };
+  test_t t = { 
+    .name = "unix_thr",
+    .is_latency_test = 0,
+    .init_test = init_test,
+    .init_parent = init_local,
+    .finish_parent = parent_fin,
+    .init_child = init_local,
+    .finish_child = child_fin,
+    .get_write_buffer = get_write_buf,
+    .release_write_buffer = release_write_buf,
+    .get_read_buffer = get_read_buf,
+    .release_read_buffer = release_read_buf
+  };
   run_test(argc, argv, &t);
   return 0;
 }
