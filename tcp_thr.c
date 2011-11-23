@@ -34,6 +34,7 @@
 #include <inttypes.h>
 #include <netdb.h>
 #include <assert.h>
+#include <netinet/tcp.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
