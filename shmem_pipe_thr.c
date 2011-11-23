@@ -18,6 +18,8 @@
 #include "test.h"
 #include "xutil.h"
 
+#undef UNSAFE_ALLOCATOR
+
 #define PAGE_ORDER 12
 #define CACHE_LINE_SIZE 64
 static unsigned ring_order = 9;
@@ -27,9 +29,20 @@ static unsigned ring_order = 9;
 
 #define ALLOC_FAILED ((unsigned)-1)
 
+#ifdef NDEBUG
+#define DBG(x) do {} while (0)
+#else
+#define DBG(x) do { x; } while (0)
+#endif
+
 struct shmem_pipe {
 	void *ring;
+#ifndef UNSAFE_ALLOCATOR
 	struct alloc_node *first_alloc, *next_free_alloc, *last_freed_node;
+#ifndef NDEBUG
+	int nr_alloc_nodes;
+#endif
+#endif
 
 	int child_to_parent_read, child_to_parent_write;
 	int parent_to_child_read, parent_to_child_write;
@@ -42,9 +55,27 @@ struct shmem_pipe {
 struct extent {
 	unsigned base;
 	unsigned size;
-	int sequence;
 };
 
+#ifdef UNSAFE_ALLOCATOR
+static unsigned shared_consumer, shared_producer;
+static unsigned
+alloc_shared_space(struct shmem_pipe *sp, unsigned size)
+{
+	unsigned res;
+	if (shared_producer - shared_consumer > ring_size - size)
+		return ALLOC_FAILED;
+	res = shared_producer % ring_size;
+	shared_producer += size;
+	return res;
+}
+static void
+release_shared_space(struct shmem_pipe *sp, unsigned base, unsigned size)
+{
+	assert(shared_consumer == base);
+	shared_consumer += size;
+}
+#else
 /* Our allocation structure is a simple linked list.  That's pretty
    stupid, *except* that the allocation pattern is almost always a
    very simple queue, so it becomes very simple.  i.e. we release
@@ -64,11 +95,13 @@ sanity_check(const struct shmem_pipe *sp)
 {
 	const struct alloc_node *cursor;
 	int found_nf = 0, found_lf = 0;
+	int n = 0;
 	assert(sp->first_alloc);
 	assert(sp->first_alloc->start == 0);
 	for (cursor = sp->first_alloc;
 	     cursor;
 	     cursor = cursor->next) {
+		n++;
 		if (cursor == sp->first_alloc)
 			assert(!cursor->prev);
 		else
@@ -93,8 +126,13 @@ sanity_check(const struct shmem_pipe *sp)
 	}
 	if (!found_nf)
 		assert(!sp->next_free_alloc);
+	else
+		assert(sp->next_free_alloc->is_free);
 	if (!found_lf)
 		assert(!sp->last_freed_node);
+	else
+		assert(sp->last_freed_node->is_free);
+	assert(n == sp->nr_alloc_nodes);
 }
 #else
 static void
@@ -130,6 +168,7 @@ alloc_shared_space(struct shmem_pipe *sp, unsigned size)
 					sp->next_free_alloc->next->next->prev = sp->next_free_alloc->prev;
 				}
 				struct alloc_node *p = sp->next_free_alloc->next->next;
+				DBG(sp->nr_alloc_nodes--);
 				free(sp->next_free_alloc->next);
 				if (sp->next_free_alloc->next == sp->last_freed_node)
 					sp->last_freed_node = NULL;
@@ -145,6 +184,7 @@ alloc_shared_space(struct shmem_pipe *sp, unsigned size)
 			}
 			if (sp->next_free_alloc == sp->last_freed_node)
 				sp->last_freed_node = NULL;
+			DBG(sp->nr_alloc_nodes--);
 			free(sp->next_free_alloc);
 			sp->next_free_alloc = NULL;
 		}
@@ -182,11 +222,13 @@ alloc_shared_space(struct shmem_pipe *sp, unsigned size)
 					f->next->prev = f;
 				if (sp->last_freed_node == t)
 					sp->last_freed_node = NULL;
+				DBG(sp->nr_alloc_nodes--);
 				free(t);
 			}
 			f->is_free = 0;
 		} else {
 			f = calloc(sizeof(struct alloc_node), 1);
+			DBG(sp->nr_alloc_nodes++);
 			f->next = sp->first_alloc;
 			f->start = 0;
 			f->end = size;
@@ -195,6 +237,10 @@ alloc_shared_space(struct shmem_pipe *sp, unsigned size)
 			f->next->start = size;
 			sp->first_alloc = f;
 		}
+		if (sp->last_freed_node == sp->first_alloc)
+			sp->last_freed_node = sp->first_alloc->next;
+		if (sp->next_free_alloc == sp->first_alloc)
+			sp->next_free_alloc = sp->first_alloc->next;
 		sanity_check(sp);
 		return 0;
 	} else {
@@ -246,7 +292,8 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 				lan->end = X->end;
 				lan->next = Y;
 				if (X == sp->next_free_alloc)
-					sp->next_free_alloc = NULL;
+					sp->next_free_alloc = lan;
+				DBG(sp->nr_alloc_nodes--);
 				free(X);
 			} else {
 				/* Just turn LAN->free1->NULL into
@@ -255,7 +302,8 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 				lan->next = NULL;
 			}
 			if (next == sp->next_free_alloc)
-				sp->next_free_alloc = NULL;
+				sp->next_free_alloc = lan;
+			DBG(sp->nr_alloc_nodes--);
 			free(next);
 		}
 		sanity_check(sp);
@@ -297,9 +345,10 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 				if (lan->next)
 					lan->next->prev = lan;
 				if (sp->last_freed_node == t)
-					sp->last_freed_node = NULL;
+					sp->last_freed_node = lan;
 				if (sp->next_free_alloc == t)
-					sp->next_free_alloc = NULL;
+					sp->next_free_alloc = lan;
+				DBG(sp->nr_alloc_nodes--);
 				free(t);
 			}
 			sanity_check(sp);
@@ -313,6 +362,7 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 			lan->next = sp->first_alloc;
 			sp->first_alloc = lan;
 			sp->last_freed_node = sp->first_alloc;
+			DBG(sp->nr_alloc_nodes++);
 			sanity_check(sp);
 		}
 		return;
@@ -334,7 +384,10 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 			t->end = start + size;
 			lan->next = t;
 			lan->end = start;
+			DBG(sp->nr_alloc_nodes++);
 		}
+		if (!sp->next_free_alloc)
+			sp->next_free_alloc = lan->next;
 		sp->last_freed_node = lan->next;
 		sanity_check(sp);
 		return;
@@ -364,10 +417,15 @@ release_shared_space(struct shmem_pipe *sp, unsigned start, unsigned size)
 	lan->next = a;
 	lan->end = start;
 
+	DBG(sp->nr_alloc_nodes += 2);
+
+	if (!sp->next_free_alloc)
+		sp->next_free_alloc = a;
+
 	/* And we're done. */
 	sanity_check(sp);
 }
-
+#endif
 static void
 init_test(test_data *td)
 {
@@ -384,56 +442,29 @@ init_test(test_data *td)
 	sp->parent_to_child_write = pip[1];
 	td->data = sp;
 
+#ifndef UNSAFE_ALLOCATOR
 	sp->first_alloc = calloc(sizeof(*sp->first_alloc), 1);
 	sp->first_alloc->is_free = 1;
 	sp->first_alloc->end = ring_size;
-}
-
-#ifdef SOS22_MEMSET
-static void mymemset(void* buf, int byte, size_t count) {
-  int clobber;
-  assert(count % 8 == 0);
-  asm volatile ("rep stosq\n"
-		: "=c" (clobber)
-		: "a" ((unsigned long)(byte & 0xff) * 0x0101010101010101ul),
-		  "D" (buf),
-		  "0" (count / 8)
-		: "memory");
-}
-#define real_memset mymemset
-#else
-#define real_memset memset
+	DBG(sp->nr_alloc_nodes = 1);
 #endif
-
-static void
-set_message(void *data, unsigned size, int byte)
-{
-	real_memset(data, byte, size);
 }
 
 static void
-copy_message(void *data, const void *inbuf, unsigned size)
+populate_message(void *buf, int size, int mode, void *local_buf, int i)
 {
-	memcpy(data, inbuf, size);
-}
-
-static void
-populate_message(void *buf, int size, int mode, void *local_buf)
-{
-	static unsigned cntr;
 	switch (mode) {
 	case MODE_DATAINPLACE:
-		set_message(buf, size, cntr);
+		memset(buf, i, size);
 		break;
 	case MODE_DATAEXT:
-		memset(local_buf, cntr, size);
+		memset(local_buf, i, size);
 	case MODE_NODATA:
-		copy_message(buf, local_buf, size);
+		memcpy(buf, local_buf, size);
 		break;
 	default:
 		abort();
 	}
-	cntr++;
 }
 
 static void
@@ -447,109 +478,57 @@ run_child(test_data *td)
 {
 	struct shmem_pipe *sp = td->data;
 	unsigned char incoming[EXTENT_BUFFER_SIZE];
-	unsigned char outgoing[EXTENT_BUFFER_SIZE];
-	struct pollfd pfd[2];
+	struct extent outgoing_extents[EXTENT_BUFFER_SIZE/sizeof(struct extent)];
 	int incoming_bytes = 0;
-	unsigned outgoing_cons = 0, outgoing_prod = 0;
+	unsigned nr_outgoing_extents = 0;
 	int i;
-	int j;
 	int k;
-	bool write_closed = false;
-	int incoming_sequence = 0;
-	int outgoing_sequence = 0xf0010000;
 	void *rx_buf = malloc(td->size);
+	unsigned outgoing_extent_bytes;
+
+	outgoing_extent_bytes = 0;
 
 	close(sp->child_to_parent_read);
 	close(sp->parent_to_child_write);
 	while (1) {
-		i = 0;
-		if (incoming_bytes < sizeof(incoming) &&
-		    outgoing_prod - outgoing_cons < sizeof(outgoing) - sizeof(struct extent)) {
-			pfd[i].fd = sp->parent_to_child_read;
-			pfd[i].events = POLLIN|POLLHUP|POLLRDHUP;
-			pfd[i].revents = 0;
-			i++;
-		}
-		if (outgoing_prod != outgoing_cons) {
-			pfd[i].fd = sp->child_to_parent_write;
-			pfd[i].events = POLLOUT;
-			pfd[i].revents = 0;
-			i++;
-		}
-		assert(i != 0);
-		j = poll(pfd, i, -1);
-		if (j < 0)
-			err(1, "poll");
-		for (j = 0; j < i; j++) {
-			if (!pfd[j].revents)
-				continue;
-			if (pfd[j].fd == sp->parent_to_child_read) {
-				k = read(sp->parent_to_child_read,
-					 (void *)incoming + incoming_bytes,
-					 sizeof(incoming) - incoming_bytes);
-				if (k == 0)
-					goto eof;
-				if (k < 0)
-					err(1, "child read");
-				incoming_bytes += k;
-			} else {
-				int to_copy;
-
-				assert(pfd[j].fd == sp->child_to_parent_write);
-				to_copy = outgoing_prod - outgoing_cons;
-				if (outgoing_cons / sizeof(outgoing) != outgoing_prod / sizeof(outgoing)) {
-					assert(to_copy >= sizeof(outgoing) - (outgoing_cons % sizeof(outgoing)));
-					to_copy = sizeof(outgoing) - (outgoing_cons % sizeof(outgoing));
-				}
-				k = write(sp->child_to_parent_write,
-					  outgoing + outgoing_cons % sizeof(outgoing),
-					  to_copy);
-				if (k < 0)
-					err(1, "child write");
-				if (k == 0) {
-					printf("Child write pipe is closed!\n");
-					abort();
-					write_closed = true;
-				}
-				outgoing_cons += k;
-			}
-		}
+		k = read(sp->parent_to_child_read,
+			 (void *)incoming + incoming_bytes,
+			 sizeof(incoming) - incoming_bytes);
+		if (k == 0)
+			goto eof;
+		if (k < 0)
+			err(1, "child read");
+		incoming_bytes += k;
 
 		for (i = 0;
-		     i < incoming_bytes / sizeof(struct extent) &&
-			     outgoing_prod - outgoing_cons < sizeof(outgoing) - sizeof(struct extent);
+		     i < incoming_bytes / sizeof(struct extent);
 		     i++) {
 			struct extent *inc = &((struct extent *)incoming)[i];
-			struct extent out;
+			struct extent *out;
 			assert(inc->base <= ring_size);
 			assert(inc->base + inc->size <= ring_size);
-			assert(inc->sequence == incoming_sequence);
-			incoming_sequence++;
 			consume_message(sp->ring + inc->base, inc->size, rx_buf);
-			out = *inc;
-			out.sequence = outgoing_sequence;
-
-			if ((outgoing_prod + sizeof(out)) / sizeof(outgoing) == outgoing_prod / sizeof(outgoing)) {
-				memcpy(outgoing + (outgoing_prod % sizeof(outgoing)),
-				       &out,
-				       sizeof(out));
+			out = &outgoing_extents[nr_outgoing_extents-1];
+			/* Try to reuse previous outgoing extent */
+			if (nr_outgoing_extents != 0 &&
+			    out->base + out->size == inc->base) {
+				out->size += inc->size;
 			} else {
-				memcpy(outgoing + (outgoing_prod % sizeof(outgoing)),
-				       &out,
-				       sizeof(outgoing) - (outgoing_prod % sizeof(outgoing)));
-				memcpy(outgoing,
-				       (void *)((unsigned long)&out + sizeof(outgoing) - (outgoing_prod % sizeof(outgoing))),
-				       sizeof(out) - (sizeof(outgoing) - (outgoing_prod % sizeof(outgoing))));
+				outgoing_extents[nr_outgoing_extents] = *inc;
+				nr_outgoing_extents++;
 			}
-
-			outgoing_sequence++;
-			outgoing_prod += sizeof(out);
+			outgoing_extent_bytes += inc->size;
 		}
 		memmove(incoming, incoming + i * sizeof(struct extent), incoming_bytes - i * sizeof(struct extent));
 		incoming_bytes -= i * sizeof(struct extent);
 
-		if (write_closed)
-			outgoing_prod = outgoing_cons;
+		if (outgoing_extent_bytes > ring_size / 8) {
+			xwrite(sp->child_to_parent_write,
+			       outgoing_extents,
+			       nr_outgoing_extents * sizeof(struct extent));
+			nr_outgoing_extents = 0;
+			outgoing_extent_bytes = 0;
+		}
 	}
 
 eof:
@@ -564,7 +543,6 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 	int r;
 	int s;
 	static int total_read;
-	static int sequence = 0xf0010000;
 
 	s = read(sp->child_to_parent_read, sp->rx_buf + sp->rx_buf_prod, sizeof(sp->rx_buf) - sp->rx_buf_prod);
 	if (s < 0)
@@ -573,8 +551,6 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 	sp->rx_buf_prod += s;
 	for (r = 0; r < sp->rx_buf_prod / sizeof(struct extent); r++) {
 		struct extent *e = &((struct extent *)sp->rx_buf)[r];
-		assert(e->sequence == sequence);
-		sequence++;
 		release_shared_space(sp, e->base, e->size);
 	}
 	if (sp->rx_buf_prod != r * sizeof(struct extent))
@@ -585,23 +561,22 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 }
 
 static void
-send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf)
+send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf, int i)
 {
-	static int sequence;
 	unsigned long offset;
 	struct extent ext;
 
 	while ((offset = alloc_shared_space(sp, message_size)) == ALLOC_FAILED)
 		wait_for_returned_buffers(sp);
 
-	populate_message(sp->ring + offset, message_size, mode, buf);
+	populate_message(sp->ring + offset, message_size, mode, buf, i);
 
-	ext.sequence = sequence;
-	sequence++;
 	ext.base = offset;
 	ext.size = message_size;
 
 	xwrite(sp->parent_to_child_write, &ext, sizeof(ext));
+
+	assert(sp->nr_alloc_nodes <= 3);
 }
 
 static void
@@ -633,7 +608,7 @@ run_parent(test_data *td)
 	close(sp->parent_to_child_read);
 
 	thr_test(
-		send_a_message(sp, td->size, td->mode, local_buf),
+		send_a_message(sp, td->size, td->mode, local_buf, i),
 		flush_buffers(sp),
 		td);
 }
