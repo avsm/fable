@@ -41,6 +41,8 @@ typedef struct {
   int read_in_place;
   int produce_method;
   int do_verify;
+  int first_core;
+  int second_core;
 } test_data;
 
 typedef struct {

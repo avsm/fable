@@ -190,7 +190,7 @@ void parent_main(test_t* test, test_data* td, int is_latency_test) {
   else								
     logmsg(td,							
 	   "headline",						
-	   "%s %d %d %d %d %d %" PRId64 " %" PRId64 " Mbps\n", td->name, td->size, 
+	   "%s %d %d %d %d %d %d %d %" PRId64 " %" PRId64 " Mbps\n", td->name, td->first_core, td->second_core, td->size, 
 	   td->produce_method, td->write_in_place, td->read_in_place, td->do_verify, td->count,							
 	   ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); 
 									
@@ -282,6 +282,8 @@ run_test(int argc, char *argv[], test_t *test)
       td->read_in_place = read_in_place;
       td->produce_method = produce_method;
       td->do_verify = do_verify;
+      td->first_core = first_cpu;
+      td->second_core = second_cpu;
       td->per_iter_timings = per_iter_timings;
       //      td->mode = mode;
       /* Test-specific init */
