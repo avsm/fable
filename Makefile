@@ -6,7 +6,7 @@ LDFLAGS+=-lm
 TARGETS=pipe_thr tcp_thr tcp_nodelay_thr unix_thr mempipe_thr mempipe_spin_thr
 TARGETS+=vmsplice_pipe_thr vmsplice_hugepages_pipe_thr vmsplice_hugepages_coop_pipe_thr vmsplice_coop_pipe_thr
 TARGETS+=shmem_pipe_thr
-TARGETS+=pipe_lat unix_lat tcp_lat tcp_nodelay_lat
+TARGETS+=pipe_lat unix_lat tcp_lat tcp_nodelay_lat mempipe_lat
 TARGETS+=summarise_tsc_counters
 
 all: $(TARGETS)
