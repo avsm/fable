@@ -44,6 +44,7 @@
 typedef struct {
   int ifds[2];
   int ofds[2];
+  void* buf;
 } pipe_state;
 
 static void
@@ -58,37 +59,39 @@ init_test(test_data *td)
 }
 
 static void
-run_child(test_data *td)
+local_init(test_data *td)
 {
   pipe_state *ps = (pipe_state *)td->data;
-  void *buf = xmalloc(td->size);
-  int i;
-
-  for (i = 0; i < td->count; i++) {
-    xread(ps->ifds[0], buf, td->size);
-    xwrite(ps->ofds[1], buf, td->size); 
-  }
+  ps->buf = xmalloc(td->size);
 }
 
 static void
-run_parent(test_data *td)
+child_ping(test_data *td)
 {
   pipe_state *ps = (pipe_state *)td->data;
-  void *buf = xmalloc(td->size);
+  xread(ps->ifds[0], ps->buf, td->size);
+  xwrite(ps->ofds[1], ps->buf, td->size); 
+}
 
-  latency_test(
-    do {
-      xwrite(ps->ifds[1], buf, td->size); 
-      xread(ps->ofds[0], buf, td->size);
-    } while (0),
-    td
-  );
+static void
+parent_ping(test_data *td)
+{
+  pipe_state *ps = (pipe_state *)td->data;
+  xwrite(ps->ifds[1], ps->buf, td->size); 
+  xread(ps->ofds[0], ps->buf, td->size);
 }
 
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "pipe_lat", init_test, run_parent, run_child };
+  test_t t = { .name = "pipe_lat", 
+	       .is_latency_test = 1,
+	       .init_test = init_test,
+	       .init_parent = local_init,
+	       .init_child = local_init,
+	       .parent_ping = parent_ping,
+	       .child_ping = child_ping
+  };
   run_test(argc, argv, &t);
   return 0;
 }

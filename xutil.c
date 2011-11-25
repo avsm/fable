@@ -231,11 +231,6 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
     }
   }
 
-  if(!(*produce_method >= 1 && *produce_method <= 3)) {
-    fprintf(stderr, "Produce method (option -m) must be specified and between 1 and 3\n");
-    exit(1);
-  }
-
   fprintf(stderr, "size %d count %" PRId64 " first_cpu %d second_cpu %d parallel %d tsc %d produce-method %d %s %s output_dir %s\n",
 	  *size, *count, *first_cpu, *second_cpu, *parallel, *per_iter_timings, *produce_method, *read_in_place ? "read-in-place" : "copy-read", *write_in_place ? "write-in-place" : "copy-write",
 	  *output_dir);

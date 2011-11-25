@@ -43,6 +43,7 @@
 
 typedef struct {
   int sv[2];
+  void* buf;
 } test_state;
 
 static void
@@ -55,37 +56,39 @@ init_test(test_data *td)
 }
 
 static void
-run_child(test_data *td)
+local_init(test_data *td)
 {
-  test_state *ts = (test_state *)td->data;
-  void *buf = xmalloc(td->size);
-  int i;
-
-  for (i = 0; i < td->count; i++) {
-    xread(ts->sv[1], buf, td->size);
-    xwrite(ts->sv[1], buf, td->size); 
-  }
+  test_state *ps = (test_state *)td->data;
+  ps->buf = xmalloc(td->size);
 }
 
 static void
-run_parent(test_data *td)
+child_ping(test_data *td)
 {
-  test_state *ts = (test_state *)td->data;
-  void *buf = xmalloc(td->size);
+  test_state *ps = (test_state *)td->data;
+  xread(ps->sv[1], ps->buf, td->size);
+  xwrite(ps->sv[1], ps->buf, td->size);
+}
 
-  latency_test(
-    do {
-      xwrite(ts->sv[0], buf, td->size); 
-      xread(ts->sv[0], buf, td->size);
-    } while (0),
-    td
-  );
+static void
+parent_ping(test_data *td)
+{
+  test_state *ps = (test_state *)td->data;
+  xwrite(ps->sv[0], ps->buf, td->size);
+  xread(ps->sv[0], ps->buf, td->size);
 }
 
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "unix_lat", init_test, run_parent, run_child };
+  test_t t = { .name = "unix_lat", 
+	       .is_latency_test = 1,
+	       .init_test = init_test,
+	       .init_parent = local_init,
+	       .init_child = local_init,
+	       .parent_ping = parent_ping,
+	       .child_ping = child_ping
+  };
   run_test(argc, argv, &t);
   return 0;
 }

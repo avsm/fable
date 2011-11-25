@@ -108,8 +108,9 @@ void parent_main(test_t* test, test_data* td, int is_latency_test) {
   unsigned long delta;	
   unsigned long t;
   struct iovec private_vec = { .iov_base = private_buffer, .iov_len = td->size };
-				
-  test->init_parent(td);
+			
+  if(test->init_parent)
+    test->init_parent(td);
     									
   /* calm compiler */							
   iter_cycles = NULL;							
@@ -129,45 +130,52 @@ void parent_main(test_t* test, test_data* td, int is_latency_test) {
     int n_write_bufs;
     struct iovec* produce_bufs;
     int n_produce_bufs;
-    write_bufs = test->get_write_buffer(td, td->size, &n_write_bufs);
-    if(td->write_in_place) {
-      produce_bufs = write_bufs;
-      n_produce_bufs = n_write_bufs;
-    }
-    else {
-      produce_bufs = &private_vec;
-      n_produce_bufs = 1;
-    }
 
-    for(int j = 0; j < n_produce_bufs; j++) {
-      if(td->produce_method == PRODUCE_GLIBC_MEMSET)
-	memset(produce_bufs[j].iov_base, (char)i, produce_bufs[j].iov_len);
-      else if(td->produce_method == PRODUCE_STOS_MEMSET)
-	stosmemset(produce_bufs[j].iov_base, (char)i, produce_bufs[j].iov_len);
-      else if(td->produce_method == PRODUCE_LOOP) {
-	for(int k = 0; k < produce_bufs[j].iov_len; k++)
-	  ((char*)produce_bufs[j].iov_base)[k] = (char)i;
+    if(!is_latency_test) {
+      write_bufs = test->get_write_buffer(td, td->size, &n_write_bufs);
+      if(td->write_in_place) {
+	produce_bufs = write_bufs;
+	n_produce_bufs = n_write_bufs;
       }
       else {
-	assert(0 && "Bad produce method!");
+	produce_bufs = &private_vec;
+	n_produce_bufs = 1;
       }
-    }
 
-    if(!td->write_in_place) {
-      int offset = 0;
       for(int j = 0; j < n_produce_bufs; j++) {
-	memcpy(((char*)write_bufs[j].iov_base) + offset, private_buffer + offset, write_bufs[j].iov_len);
-	offset += write_bufs[j].iov_len;
+	if(td->produce_method == PRODUCE_GLIBC_MEMSET)
+	  memset(produce_bufs[j].iov_base, (char)i, produce_bufs[j].iov_len);
+	else if(td->produce_method == PRODUCE_STOS_MEMSET)
+	  stosmemset(produce_bufs[j].iov_base, (char)i, produce_bufs[j].iov_len);
+	else if(td->produce_method == PRODUCE_LOOP) {
+	  for(int k = 0; k < produce_bufs[j].iov_len; k++)
+	    ((char*)produce_bufs[j].iov_base)[k] = (char)i;
+	}
+	else {
+	  assert(0 && "Bad produce method!");
+	}
       }
-    }
 
-    test->release_write_buffer(td, write_bufs, n_write_bufs);
+      if(!td->write_in_place) {
+	int offset = 0;
+	for(int j = 0; j < n_produce_bufs; j++) {
+	  memcpy(((char*)write_bufs[j].iov_base) + offset, private_buffer + offset, write_bufs[j].iov_len);
+	  offset += write_bufs[j].iov_len;
+	}
+      }
+
+      test->release_write_buffer(td, write_bufs, n_write_bufs);
+    }
+    else {
+      test->parent_ping(td);
+    }
 
     if(td->per_iter_timings)
       iter_cycles[i] = rdtsc() - t;					
   }									
 
-  test->finish_parent(td);
+  if(test->finish_parent)
+    test->finish_parent(td);
 
   gettimeofday(&stop, NULL);						
 									
@@ -191,14 +199,13 @@ void parent_main(test_t* test, test_data* td, int is_latency_test) {
 
 }
 
-
-
-void child_main(test_t* test, test_data* td) {
+void child_main(test_t* test, test_data* td, int is_latency_test) {
 
   char* private_buffer = xmalloc(td->size);
   struct iovec private_vec = { .iov_base = private_buffer, .iov_len = td->size };
 
-  test->init_child(td);
+  if(test->init_child)
+    test->init_child(td);
 
   for(int i = 0; i < td->count; i++) {
 
@@ -206,27 +213,33 @@ void child_main(test_t* test, test_data* td) {
     int n_check_bufs;
     struct iovec* read_bufs;
     int n_read_bufs;
-    read_bufs = test->get_read_buffer(td, td->size, &n_read_bufs);
-    if(td->read_in_place) {
-      check_bufs = read_bufs;
-      n_check_bufs = n_read_bufs;
+
+    if(!is_latency_test) {
+      read_bufs = test->get_read_buffer(td, td->size, &n_read_bufs);
+      if(td->read_in_place) {
+	check_bufs = read_bufs;
+	n_check_bufs = n_read_bufs;
+      }
+      else {
+	check_bufs = &private_vec;
+	n_check_bufs = 1;
+	for(int j = 0, offset = 0; j < n_read_bufs; offset += read_bufs[j].iov_len, j++) {
+	  memcpy(private_buffer + offset, read_bufs[j].iov_base, read_bufs[j].iov_len);
+	}
+      }
+
+      if(td->do_verify) {
+	for(int j = 0; j < n_check_bufs; j++) {
+	  if(repmemcmp(check_bufs[j].iov_base, i, check_bufs[j].iov_len))
+	    err(1, "bad data");
+	}
+      }
+
+      test->release_read_buffer(td, read_bufs, n_read_bufs);
     }
     else {
-      check_bufs = &private_vec;
-      n_check_bufs = 1;
-      for(int j = 0, offset = 0; j < n_read_bufs; offset += read_bufs[j].iov_len, j++) {
-	memcpy(private_buffer + offset, read_bufs[j].iov_base, read_bufs[j].iov_len);
-      }
+      test->child_ping(td);
     }
-
-    if(td->do_verify) {
-      for(int j = 0; j < n_check_bufs; j++) {
-	if(repmemcmp(check_bufs[j].iov_base, i, check_bufs[j].iov_len))
-	  err(1, "bad data");
-      }
-    }
-
-    test->release_read_buffer(td, read_bufs, n_read_bufs);
 
   }
 
@@ -247,6 +260,11 @@ run_test(int argc, char *argv[], test_t *test)
   int write_in_place, read_in_place, produce_method, do_verify;
 
   parse_args(argc, argv, &per_iter_timings, &size, &count, &first_cpu, &second_cpu, &parallel, &output_dir, &write_in_place, &read_in_place, &produce_method, &do_verify);
+
+  if((!test->is_latency_test) && (!(produce_method >= 1 && produce_method <= 3))) {
+    fprintf(stderr, "Produce method (option -m) must be specified and between 1 and 3\n");
+    exit(1);
+  }
 
   if (mkdir(output_dir, 0755) < 0 && errno != EEXIST)
     err(1, "creating directory %s", output_dir);
@@ -271,7 +289,7 @@ run_test(int argc, char *argv[], test_t *test)
       pid_t pid2 = fork ();
       if (!pid2) { /* child2 */
         setaffinity(first_cpu);
-	child_main(test, td);
+	child_main(test, td, test->is_latency_test);
         exit (0);
       } else { /* parent2 */
 	td->output_dir = output_dir; /* Do this here because the child

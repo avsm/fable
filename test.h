@@ -55,6 +55,8 @@ typedef struct {
   void (*release_write_buffer)(test_data *, struct iovec* vecs, int n_vecs);
   struct iovec* (*get_read_buffer)(test_data *, int size, int* n_vecs);
   void (*release_read_buffer)(test_data *, struct iovec* vecs, int n_vecs);
+  void (*parent_ping)(test_data *);
+  void (*child_ping)(test_data *);
 } test_t;
 
 static inline unsigned long
