@@ -525,6 +525,7 @@ static void release_read_buffer(test_data* td, struct iovec* vecs, int nvecs) {
   if(sp->incoming_bytes_consumed - sp->incoming_bytes < sizeof(struct extent)) {
     memmove(sp->incoming, sp->incoming + sp->incoming_bytes_consumed, sp->incoming_bytes - sp->incoming_bytes_consumed);
     sp->incoming_bytes -= sp->incoming_bytes_consumed;
+    sp->incoming_bytes_consumed = 0;
   }
 
   // Queue it for transmission back to the writer

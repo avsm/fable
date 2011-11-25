@@ -230,7 +230,6 @@ static struct iovec* get_read_buffer(test_data* td, int len, int* n_vecs) {
   }
   sz &= ~MH_FLAGS;
   if(sz != td->size) {
-    printf("%d %d %ld\n", sz, td->size, rs->next_message_start);
     exit(1);
   }
   unsigned long offset = mask_ring_index(rs->next_message_start + sizeof(struct msg_header));
@@ -259,6 +258,15 @@ static void release_read_buffer(test_data* td, struct iovec* vecs, int n_vecs) {
   set_message_ready(mh, td->size);
 
   rs->next_message_start += td->size + sizeof(struct msg_header);
+
+}
+
+static void child_finish(test_data* td) {
+
+#ifdef USE_FUTEX
+  if(deferred_write.ptr)
+    _set_message_ready(deferred_write.ptr, deferred_write.val);
+#endif
 
 }
 
@@ -346,6 +354,11 @@ void parent_finish(test_data* td) {
 
   struct ring_state* rs = (struct ring_state*)td->data;
   volatile struct msg_header *mh;
+
+  mh = rs->ringmem + mask_ring_index(rs->next_tx_offset);
+  mh->size_and_flags = MH_FLAG_READY | MH_FLAG_STOP;
+  futex_wake(&mh->size_and_flags);
+
   /* Wait for child to acknowledge receipt of all messages */
   while (rs->first_unacked_msg != rs->next_tx_offset) {
     int size;
@@ -354,10 +367,6 @@ void parent_finish(test_data* td) {
     size &= ~MH_FLAGS;
     rs->first_unacked_msg += size + sizeof(struct msg_header);
   }
-
-  mh = rs->ringmem + mask_ring_index(rs->next_tx_offset);
-  mh->size_and_flags = MH_FLAG_READY | MH_FLAG_STOP;
-  futex_wake(&mh->size_and_flags);
 
 }
 
@@ -407,6 +416,7 @@ main(int argc, char *argv[])
     .init_parent = init_parent,
     .finish_parent = parent_finish,
     .init_child = init_child,
+    .finish_child = child_finish,
     .get_write_buffer = get_write_buffer,
     .release_write_buffer = release_write_buffer,
     .get_read_buffer = get_read_buffer,

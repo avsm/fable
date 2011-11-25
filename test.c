@@ -182,8 +182,8 @@ void parent_main(test_t* test, test_data* td, int is_latency_test) {
   else								
     logmsg(td,							
 	   "headline",						
-	   "%s %d %d %d %d %" PRId64 " %" PRId64 " Mbps\n", td->name, td->size, 
-	   td->produce_method, td->write_in_place, td->read_in_place, td->count,							
+	   "%s %d %d %d %d %d %" PRId64 " %" PRId64 " Mbps\n", td->name, td->size, 
+	   td->produce_method, td->write_in_place, td->read_in_place, td->do_verify, td->count,							
 	   ((((td->count * (int64_t)1e6) / delta) * td->size * 8) / (int64_t) 1e6)); 
 									
   if (td->per_iter_timings)						
@@ -214,14 +214,16 @@ void child_main(test_t* test, test_data* td) {
     else {
       check_bufs = &private_vec;
       n_check_bufs = 1;
-      for(int j = 0, offset = 0; j < n_read_bufs; j++, offset += read_bufs[j].iov_len) {
+      for(int j = 0, offset = 0; j < n_read_bufs; offset += read_bufs[j].iov_len, j++) {
 	memcpy(private_buffer + offset, read_bufs[j].iov_base, read_bufs[j].iov_len);
       }
     }
 
-    for(int j = 0; j < n_check_bufs; j++) {
-      if(repmemcmp(check_bufs[j].iov_base, i, check_bufs[j].iov_len))
-	err(1, "bad data");
+    if(td->do_verify) {
+      for(int j = 0; j < n_check_bufs; j++) {
+	if(repmemcmp(check_bufs[j].iov_base, i, check_bufs[j].iov_len))
+	  err(1, "bad data");
+      }
     }
 
     test->release_read_buffer(td, read_bufs, n_read_bufs);
@@ -242,9 +244,9 @@ run_test(int argc, char *argv[], test_t *test)
   size_t count;
   int size, parallel;
   char *output_dir;
-  int write_in_place, read_in_place, produce_method;
+  int write_in_place, read_in_place, produce_method, do_verify;
 
-  parse_args(argc, argv, &per_iter_timings, &size, &count, &first_cpu, &second_cpu, &parallel, &output_dir, &write_in_place, &read_in_place, &produce_method);
+  parse_args(argc, argv, &per_iter_timings, &size, &count, &first_cpu, &second_cpu, &parallel, &output_dir, &write_in_place, &read_in_place, &produce_method, &do_verify);
 
   if (mkdir(output_dir, 0755) < 0 && errno != EEXIST)
     err(1, "creating directory %s", output_dir);
@@ -261,6 +263,7 @@ run_test(int argc, char *argv[], test_t *test)
       td->write_in_place = write_in_place;
       td->read_in_place = read_in_place;
       td->produce_method = produce_method;
+      td->do_verify = do_verify;
       td->per_iter_timings = per_iter_timings;
       //      td->mode = mode;
       /* Test-specific init */

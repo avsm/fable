@@ -208,11 +208,13 @@ static void release_write_buffer(test_data* td, struct iovec* vecs, int n_vecs) 
   pipe_state *ps = (pipe_state *)td->data;
   assert(n_vecs == 1);
   assert(vecs == &td->iov);
+#ifdef VMSPLICE_COOP
   ps->bytes_written += td->size;
   while(ps->bytes_written >= coop_reporting_chunk_size) {
     ps->chunks_written++;
     ps->bytes_written -= coop_reporting_chunk_size;
   }
+#endif
   ps->write_offset += td->size;
   while(vecs[0].iov_len > 0) {
     ssize_t this_write = vmsplice(ps->fds[1], vecs, n_vecs, 0);

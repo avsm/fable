@@ -173,7 +173,7 @@ help(char *argv[])
 
 void
 parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, int *first_cpu, int *second_cpu,
-	   int *parallel, char **output_dir, int *write_in_place, int *read_in_place, int *produce_method)
+	   int *parallel, char **output_dir, int *write_in_place, int *read_in_place, int *produce_method, int *do_verify)
 {
   int opt;
   *per_iter_timings = false;
@@ -186,7 +186,8 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
   *produce_method = 0;
   *read_in_place = 0;
   *write_in_place = 0;
-  while((opt = getopt(argc, argv, "h?tp:a:b:s:c:o:wrm:")) != -1) {
+  *do_verify = 0;
+  while((opt = getopt(argc, argv, "h?tp:a:b:s:c:o:wrvm:")) != -1) {
     switch(opt) {
      case 't':
       *per_iter_timings = true;
@@ -217,6 +218,9 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       break;
      case 'w':
       *write_in_place = 1;
+      break;
+    case 'v':
+      *do_verify = 1;
       break;
      case '?':
      case 'h':

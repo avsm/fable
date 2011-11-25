@@ -172,7 +172,12 @@ int
 main(int argc, char *argv[])
 {
   test_t t = { 
-    .name = "tcp_thr",
+    .name = "tcp_"
+    #ifdef USE_NODELAY
+    "nodelay_"
+    #endif
+    "thr"
+    ,
     .is_latency_test = 0,
     .init_test = init_test,
     .init_parent = init_parent,

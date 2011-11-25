@@ -40,6 +40,7 @@ typedef struct {
   int write_in_place;
   int read_in_place;
   int produce_method;
+  int do_verify;
 } test_data;
 
 typedef struct {
