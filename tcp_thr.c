@@ -77,7 +77,7 @@ static void init_local(test_data* td, struct tcp_state* state) {
 static void
 init_child(test_data *td)
 {
-  int sockfd, i;
+  int sockfd;
   struct tcp_state* state = (struct tcp_state*)td->data;
   struct addrinfo *res = state->info;
   struct sockaddr_storage their_addr;
@@ -85,6 +85,8 @@ init_child(test_data *td)
 
   init_local(td, state);
  
+  int i = 1;
+
   if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
     err(1, "socket");
 
@@ -159,6 +161,12 @@ init_parent(test_data *td)
     
   if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
     err(1, "connect");
+
+#ifdef USE_NODELAY
+  int i = 1;
+  if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &i, sizeof(int)) == -1)
+    err(1, "setsockopt");
+#endif
 
   state->fd = sockfd;
 }
