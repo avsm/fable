@@ -115,12 +115,11 @@ init_parent(test_data *td)
   ts->buf = xmalloc(td->size);
   struct addrinfo *res = ts->info;
   int sockfd;
-  sleep(1); 
   if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
     err(1, "socket");
     
-  if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
-    err(1, "connect");
+  while (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
+    { }
 
 #ifdef USE_NODELAY
   int flag = 1;
