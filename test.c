@@ -106,7 +106,7 @@ void parent_main(test_t* test, test_data* td, int is_latency_test) {
   struct timeval stop;						
   unsigned long *iter_cycles;						
   unsigned long delta;	
-  unsigned long t;
+  unsigned long t = 0;
   struct iovec private_vec = { .iov_base = private_buffer, .iov_len = td->size };
 			
   if(test->init_parent)
