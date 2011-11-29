@@ -35,7 +35,7 @@ TARGET := mini-os
 SUBDIRS := lib xenbus console
 
 # The common mini-os objects to build.
-APP_OBJS :=
+APP_OBJS := latency/evtchn.o
 OBJS := $(patsubst %.c,$(OBJ_DIR)/%.o,$(wildcard *.c))
 OBJS += $(patsubst %.c,$(OBJ_DIR)/%.o,$(wildcard lib/*.c))
 OBJS += $(patsubst %.c,$(OBJ_DIR)/%.o,$(wildcard xenbus/*.c))
