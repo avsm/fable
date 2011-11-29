@@ -2,6 +2,8 @@
 #include <mini-os/events.h>
 #include <mini-os/sched.h>
 
+#define NR_ITERATIONS 1000000
+
 static void
 server_handler(evtchn_port_t port, struct pt_regs *regs, void *ignore)
 {
@@ -12,7 +14,9 @@ static void
 client_handler(evtchn_port_t port, struct pt_regs *regs, void *_cntr)
 {
 	int *cntr = _cntr;
-	if (*cntr < 1000)
+	if (*cntr == -1)
+		return;
+	if (*cntr < NR_ITERATIONS)
 		notify_remote_via_evtchn(port);
 	(*cntr)++;
 }
@@ -51,6 +55,8 @@ run_client(void)
 	int cntr;
 	evtchn_port_t local_port;
 	int r;
+	int64_t start;
+	int64_t end;
 
 	do {
 		server_dom = xenbus_read_integer("server_dom");
@@ -59,7 +65,7 @@ run_client(void)
 
 	printk("Server domain:port is %d:%d\n", server_dom, server_port);
 
-	cntr = 0;
+	cntr = -1;
 	r = evtchn_bind_interdomain(server_dom, server_port,
 				    client_handler, &cntr,
 				    &local_port);
@@ -71,14 +77,26 @@ run_client(void)
 
 	unmask_evtchn(local_port);
 
+	/* Give it a second to make sure everything is nice and
+	 * stable. */
+	/* For some reason msleep(1000) waits forever, but msleep(900)
+	   does the right thing.  Meh. */
+	msleep(900);
+
+	if (cntr != -1)
+		printk("Huh? cntr %d before we even started\n", cntr);
+	cntr = 0;
+
+	start = NOW();
 	r = notify_remote_via_evtchn(local_port);
 	if (r != 0)
 		printk("Failed to notify remote on port %d!\n");
 
-	while (cntr != 1000)
+	while (cntr < NR_ITERATIONS)
 		;
 
-	printk("All done\n");
+	end = NOW();
+	printk("All done; took %ld nanoseconds for %d(%d) iterations\n", end - start, NR_ITERATIONS, cntr);
 
 	return 0;
 }
