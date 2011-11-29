@@ -410,7 +410,11 @@ int
 main(int argc, char *argv[])
 {
   test_t t = { 
-    .name = "mempipe_thr",
+    .name = "mempipe_"
+#ifdef NO_FUTEX
+    "spin_"
+#endif
+    "thr",
     .is_latency_test = 0,
     .init_test = init_test,
     .init_parent = init_parent,
