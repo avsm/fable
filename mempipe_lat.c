@@ -54,7 +54,7 @@ struct shared_page {
 static void
 init_test(test_data *td)
 {
-  td->data = establish_shm_segment(1);
+  td->data = establish_shm_segment(1, td->numa_node);
 }
 
 static void

@@ -124,7 +124,7 @@ doit(void *shm)
 int
 main(int argc, char *argv[])
 {
-  void *shm = establish_shm_segment(1);
+  void *shm = establish_shm_segment(1, -1);
   int i;
 
   for (i = 0; i < 100; i++)

@@ -29,6 +29,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <math.h>
+#include <numa.h>
 #include <sched.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -159,7 +160,7 @@ dump_tsc_counters(test_data *td, unsigned long *counts, int nr_samples)
 static void
 help(char *argv[])
 {
-  fprintf(stderr, "Usage:\n%s [-h] [-a <cpuid>] [-b <cpuid>] [-p <num] [-t] [-s <bytes>] [-c <num>] [-o <directory>]\n", argv[0]);
+  fprintf(stderr, "Usage:\n%s [-h] [-a <cpuid>] [-b <cpuid>] [-p <num] [-t] [-s <bytes>] [-c <num>] [-o <directory>] [-n <node>]\n", argv[0]);
   fprintf(stderr, "-h: show this help message\n");
   fprintf(stderr, "-a: CPU id that the first process should have affinity with\n");
   fprintf(stderr, "-b: CPU id that the second process should have affinity with\n");
@@ -168,12 +169,13 @@ help(char *argv[])
   fprintf(stderr, "-s: Size of each packet\n");
   fprintf(stderr, "-c: Number of iterations\n");
   fprintf(stderr, "-o: Where to put the various output files\n");
+  fprintf(stderr, "-n: NUMA node for shared arena, if any\n");
   exit(1);
 }
 
 void
 parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, int *first_cpu, int *second_cpu,
-	   int *parallel, char **output_dir, int *mode)
+	   int *parallel, char **output_dir, int *mode, int *numa_node)
 {
   int opt;
   *per_iter_timings = false;
@@ -184,7 +186,8 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
   *count = 100;
   *output_dir = "results";
   *mode = 0;
-  while((opt = getopt(argc, argv, "h?tp:a:b:s:c:o:m:")) != -1) {
+  *numa_node = -1;
+  while((opt = getopt(argc, argv, "h?tp:a:b:s:c:o:m:n:")) != -1) {
     switch(opt) {
      case 't':
       *per_iter_timings = true;
@@ -210,6 +213,9 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
      case 'm':
       *mode = atoi(optarg);
       break;
+    case 'n':
+      *numa_node = atoi(optarg);
+      break;
      case '?':
      case 'h':
       help(argv);
@@ -218,9 +224,9 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       help(argv);
     }
   }
-  fprintf(stderr, "size %d count %" PRId64 " first_cpu %d second_cpu %d parallel %d tsc %d output_dir %s\n",
+  fprintf(stderr, "size %d count %" PRId64 " first_cpu %d second_cpu %d parallel %d tsc %d output_dir %s numa_node %d\n",
 	  *size, *count, *first_cpu, *second_cpu, *parallel, *per_iter_timings,
-	  *output_dir);
+	  *output_dir, *numa_node);
 }
 
 void
@@ -243,10 +249,22 @@ setaffinity(int cpunum)
 }
 
 void *
-establish_shm_segment(int nr_pages)
+establish_shm_segment(int nr_pages, int numa_node)
 {
   int fd;
   void *addr;
+  struct bitmask *alloc_nodes;
+  struct bitmask *old_mask;
+
+  if (numa_node != -1) {
+    old_mask = numa_get_membind();
+    alloc_nodes = numa_allocate_nodemask();
+    numa_bitmask_setbit(alloc_nodes, numa_node);
+    numa_set_membind(alloc_nodes);
+  } else {
+    /* Shut the compiler up */
+    alloc_nodes = old_mask = (struct bitmask *)0xf001ul;
+  }
 
   fd = shm_open("/memflag_lat", O_RDWR|O_CREAT|O_EXCL, 0600);
   if (fd < 0)
@@ -259,6 +277,12 @@ establish_shm_segment(int nr_pages)
   if (addr == MAP_FAILED)
     err(1, "mapping shared memory segment");
   close(fd);
+
+  if (numa_node != -1) {
+    numa_set_membind(old_mask);
+    numa_bitmask_free(old_mask);
+    numa_bitmask_free(alloc_nodes);
+  }
 
   return addr;
 }

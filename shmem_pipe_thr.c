@@ -431,7 +431,7 @@ init_test(test_data *td)
 {
 	struct shmem_pipe *sp = calloc(sizeof(*sp), 1);
 	int pip[2];
-	sp->ring = establish_shm_segment(1 << ring_order);
+	sp->ring = establish_shm_segment(1 << ring_order, td->numa_node);
 	if (pipe(pip) < 0)
 		err(1, "pipe()");
 	sp->child_to_parent_read = pip[0];

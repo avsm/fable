@@ -104,7 +104,7 @@ mask_ring_index(unsigned long idx)
 static void
 init_test(test_data *td)
 {
-  td->data = establish_shm_segment(nr_shared_pages);
+  td->data = establish_shm_segment(nr_shared_pages, td->numa_node);
 }
 
 static void

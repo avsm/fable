@@ -13,10 +13,10 @@ TARGETS+=summarise_tsc_counters
 all: $(TARGETS)
 
 %_lat: atomicio.o test.o xutil.o %_lat.o
-	$(CC) -lrt $(CFLAGS) -o $@ $^
+	$(CC) -lrt -lnuma $(CFLAGS) -o $@ $^
 
 %_thr: atomicio.o test.o xutil.o %_thr.o
-	$(CC) -lrt $(CFLAGS) -o $@ $^
+	$(CC) -lrt -lnuma $(CFLAGS) -o $@ $^
 
 mempipe_sos22_thr: mempipe_thr.c
 	$(CC) $(CFLAGS) $^ -c -DSOS22_MEMSET -o $@

@@ -38,6 +38,7 @@ typedef struct {
   const char *output_dir;
   const char *name;
   int mode;
+  int numa_node;
 } test_data;
 
 typedef struct {
