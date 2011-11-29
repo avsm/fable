@@ -55,7 +55,9 @@
 #include <unistd.h>
 
 #undef USE_MWAIT
+#ifndef NO_FUTEX
 #define USE_FUTEX
+#endif
 
 #include "test.h"
 #include "xutil.h"
@@ -66,26 +68,6 @@
 static unsigned nr_shared_pages = 512;
 #define ring_size (PAGE_SIZE * nr_shared_pages)
 
-#ifdef SOS22_MEMSET
-#define real_memset mymemset
-#define test_name "mempipe_thr_sos22"
-
-static void mymemset(void* buf, int byte, size_t count) {
-  int clobber;
-  assert(count % 8 == 0);
-  asm volatile ("rep stosq\n"
-		: "=c" (clobber)
-		: "a" ((unsigned long)(byte & 0xff) * 0x0101010101010101ul),
-		  "D" (buf),
-		  "0" (count / 8)
-		: "memory");
-}
-
-#else
-#define real_memset memset
-#define test_name "mempipe_thr"
-#endif
-
 struct msg_header {
 #define MH_FLAG_READY 1
 #define MH_FLAG_STOP 2
@@ -93,6 +75,14 @@ struct msg_header {
 #define MH_FLAGS (MH_FLAG_READY|MH_FLAG_STOP|MH_FLAG_WAITING)
   unsigned size_and_flags;
   int pad[CACHE_LINE_SIZE / sizeof(int) - 1];
+};
+
+struct ring_state {
+  void* ringmem;
+  unsigned long next_tx_offset;
+  unsigned long first_unacked_msg;
+  unsigned long next_message_start;
+  struct iovec vecs[2];
 };
 
 static unsigned long
@@ -104,44 +94,9 @@ mask_ring_index(unsigned long idx)
 static void
 init_test(test_data *td)
 {
-  td->data = establish_shm_segment(nr_shared_pages, td->numa_node);
-}
-
-static void
-consume_message(const void *data, unsigned long offset, unsigned size,
-		void *outbuf)
-{
-  offset = mask_ring_index(offset);
-  if (offset + size <= ring_size) {
-    memcpy(outbuf, data + offset, size);
-  } else {
-    memcpy(outbuf, data + offset, ring_size - offset);
-    memcpy(outbuf + ring_size - offset, data, size - (ring_size - offset));
-  }
-}
-
-static void
-copy_message(void *data, unsigned long offset, unsigned size, const void *inbuf)
-{
-  offset = mask_ring_index(offset);
-  if (offset + size <= ring_size) {
-    memcpy(data + offset, inbuf, size);
-  } else {
-    memcpy(data + offset, inbuf, ring_size - offset);
-    memcpy(data, inbuf + (ring_size - offset), size - (ring_size - offset));
-  }
-}
-
-static void
-set_message(void *data, unsigned long offset, unsigned size, int byte) 
-{
-  offset = mask_ring_index(offset);
-  if (offset + size <= ring_size) {
-    real_memset(data + offset, byte, size);
-  } else {
-    real_memset(data + offset, byte, ring_size - offset);
-    real_memset(data, byte, size - (ring_size - offset));
-  }
+  struct ring_state* rs = (struct ring_state*)xmalloc(sizeof(struct ring_state));
+  rs->ringmem = establish_shm_segment(nr_shared_pages, td->numa_node);
+  td->data = rs;
 }
 
 #ifdef USE_MWAIT
@@ -247,48 +202,79 @@ set_message_ready(volatile struct msg_header *mh, int size)
 }
 
 static void
-run_child(test_data *td)
+init_child(test_data *td)
 {
-  unsigned long next_message_start;
-  volatile struct msg_header *mh = td->data;
-  int sz;
-  char *buf = xmalloc(td->size);
+  struct ring_state* rs = (struct ring_state*)td->data;
+  volatile struct msg_header *mh = rs->ringmem;
 
   /* Sync up with parent */
   mh->size_and_flags = 0xf008;
   while (mh->size_and_flags == 0xf008)
     ;
 
-  next_message_start = 0;
+  rs->next_message_start = 0;
   /* Enter main message loop */
-  int i;
-  for (i = 0; ;i++) {
-    assert(next_message_start % CACHE_LINE_SIZE == 0);
-    mh = td->data + mask_ring_index(next_message_start);
-    sz = wait_for_message_ready(mh, MH_FLAG_READY);
-    if (sz & MH_FLAG_STOP) /* End of test */
-      break;
-    sz &= ~MH_FLAGS;
-    if(sz != td->size) {
-      printf("%d %d %ld\n", sz, td->size, next_message_start);
-      assert(0);
-    }
-    consume_message(td->data, next_message_start + sizeof(struct msg_header), sz, buf);
+}
 
-    set_message_ready(mh, sz);
+static struct iovec* get_read_buffer(test_data* td, int len, int* n_vecs) {
 
-    next_message_start += sz + sizeof(struct msg_header);
+  struct ring_state* rs = (struct ring_state*)td->data;
+  volatile struct msg_header *mh;
+  int sz;
+  assert(rs->next_message_start % CACHE_LINE_SIZE == 0);
+  mh = rs->ringmem + mask_ring_index(rs->next_message_start);
+  sz = wait_for_message_ready(mh, MH_FLAG_READY);
+  if (sz & MH_FLAG_STOP) { /* End of test */
+    *n_vecs = 0;
+    return 0;
   }
+  sz &= ~MH_FLAGS;
+  if(sz != td->size) {
+    exit(1);
+  }
+  unsigned long offset = mask_ring_index(rs->next_message_start + sizeof(struct msg_header));
+  if (offset + td->size <= ring_size) {
+    rs->vecs[0].iov_base = rs->ringmem + offset;
+    rs->vecs[0].iov_len = td->size;
+    *n_vecs = 1;
+  }
+  else {
+    rs->vecs[0].iov_base = rs->ringmem + offset;
+    rs->vecs[0].iov_len = ring_size - offset;
+    rs->vecs[1].iov_base = rs->ringmem;
+    rs->vecs[1].iov_len = td->size - (ring_size - offset);
+    *n_vecs = 2;
+  }
+
+  return rs->vecs;
+
+}
+
+static void release_read_buffer(test_data* td, struct iovec* vecs, int n_vecs) {
+
+  struct ring_state* rs = (struct ring_state*)td->data;
+  volatile struct msg_header *mh = rs->ringmem + mask_ring_index(rs->next_message_start);
+  
+  set_message_ready(mh, td->size);
+
+  rs->next_message_start += td->size + sizeof(struct msg_header);
+
+}
+
+static void child_finish(test_data* td) {
+
+#ifdef USE_FUTEX
+  if(deferred_write.ptr)
+    _set_message_ready(deferred_write.ptr, deferred_write.val);
+#endif
+
 }
 
 static void
-run_parent(test_data *td)
+init_parent(test_data *td)
 {
-  volatile struct msg_header *mh = td->data;
-  volatile struct msg_header *mh2;
-  unsigned long next_tx_offset;
-  unsigned long first_unacked_msg;
-  char *buf = xmalloc(td->size);
+  struct ring_state* rs = (struct ring_state*)td->data;
+  volatile struct msg_header *mh = rs->ringmem;
 
   assert(td->size < ring_size - sizeof(struct msg_header));
 
@@ -297,64 +283,91 @@ run_parent(test_data *td)
     ;
   mh->size_and_flags = 0;
 
-  next_tx_offset = 0;
-  first_unacked_msg = 0;
+  rs->next_tx_offset = 0;
+  rs->first_unacked_msg = 0;
 
   /* Round up to multiple of cache line size, for sanity. */
   td->size = td->size + CACHE_LINE_SIZE - 1;
   td->size -= td->size % CACHE_LINE_SIZE;
+}
 
-  thr_test(
-    do {
-      /* Check for available ring space (eom = end of message) */
-      unsigned long eom = next_tx_offset + td->size + sizeof(struct msg_header) * 2;
-      while (eom - first_unacked_msg > ring_size) {
-	int size;
-	mh = td->data + mask_ring_index(first_unacked_msg);
-	size = wait_for_message_ready(mh, 0);
-	size &= ~MH_FLAGS;
-	first_unacked_msg += size + sizeof(struct msg_header);
-      }
+struct iovec*
+get_write_buffer(test_data* td, int len, int* n_vecs) {
 
-      /* Send message */
-      mh = td->data + mask_ring_index(next_tx_offset);
-      if(td->mode == MODE_DATAINPLACE) {
-	set_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size, i);
-      }
-      else {
-	if(td->mode == MODE_DATAEXT)
-	  memset(buf, i, td->size);
-	copy_message(td->data, next_tx_offset + sizeof(struct msg_header), td->size, buf);
-      }
+  struct ring_state* rs = (struct ring_state*)td->data;
+  volatile struct msg_header *mh;
 
-      /* Make sure that the size field in the *next* message is clear
-	 before setting the size field in *this* message.  That makes
-	 sure that the receiver stops and spins in the right place,
-	 rather than wandering off into la-la land if it picks up a
-	 stale message. */
-      mh2 = td->data + mask_ring_index(next_tx_offset + td->size + sizeof(struct msg_header));
-      mh2->size_and_flags = 0;
+  assert(len == td->size);
 
-      set_message_ready(mh, td->size | MH_FLAG_READY);
+  /* Check for available ring space (eom = end of message) */
+  unsigned long eom = rs->next_tx_offset + td->size + sizeof(struct msg_header) * 2;
+  while (eom - rs->first_unacked_msg > ring_size) {
+    int size;
+    mh = rs->ringmem + mask_ring_index(rs->first_unacked_msg);
+    size = wait_for_message_ready(mh, 0);
+    size &= ~MH_FLAGS;
+    rs->first_unacked_msg += size + sizeof(struct msg_header);
+  }
 
-      next_tx_offset += td->size + sizeof(struct msg_header);
-    } while(0),
-    do {
-      /* Wait for child to acknowledge receipt of all messages */
-      while (first_unacked_msg != next_tx_offset) {
-	int size;
-	mh = td->data + mask_ring_index(first_unacked_msg);
-	size = wait_for_message_ready(mh, 0);
-	size &= ~MH_FLAGS;
-	first_unacked_msg += size + sizeof(struct msg_header);
-      }
-    } while (0),
-    td);
+  unsigned long offset = mask_ring_index(rs->next_tx_offset + sizeof(struct msg_header));
+  if (offset + td->size <= ring_size) {
+    rs->vecs[0].iov_base = rs->ringmem + offset;
+    rs->vecs[0].iov_len = td->size;
+    *n_vecs = 1;
+  } else {
+    rs->vecs[0].iov_base = rs->ringmem + offset;
+    rs->vecs[0].iov_len = ring_size - offset;
+    rs->vecs[1].iov_base = rs->ringmem;
+    rs->vecs[1].iov_len = td->size - (ring_size - offset);
+    *n_vecs = 2;
+  }
 
-  /* Tell child to go away */
-  mh = td->data + mask_ring_index(next_tx_offset);
+  return rs->vecs;
+
+}
+
+void release_write_buffer(test_data* td, struct iovec* vecs, int nvecs) {
+
+  struct ring_state* rs = (struct ring_state*)td->data;
+  volatile struct msg_header *mh;
+  volatile struct msg_header *mh2;
+  assert(vecs == rs->vecs);
+
+  /* Send message */
+  mh = rs->ringmem + mask_ring_index(rs->next_tx_offset);
+
+  /* Make sure that the size field in the *next* message is clear
+     before setting the size field in *this* message.  That makes
+     sure that the receiver stops and spins in the right place,
+     rather than wandering off into la-la land if it picks up a
+     stale message. */
+  mh2 = rs->ringmem + mask_ring_index(rs->next_tx_offset + td->size + sizeof(struct msg_header));
+  mh2->size_and_flags = 0;
+  
+  set_message_ready(mh, td->size | MH_FLAG_READY);
+  
+  rs->next_tx_offset += td->size + sizeof(struct msg_header);
+
+}
+
+void parent_finish(test_data* td) {
+
+  struct ring_state* rs = (struct ring_state*)td->data;
+  volatile struct msg_header *mh;
+
+  mh = rs->ringmem + mask_ring_index(rs->next_tx_offset);
   mh->size_and_flags = MH_FLAG_READY | MH_FLAG_STOP;
   futex_wake(&mh->size_and_flags);
+
+  /* Wait for child to acknowledge receipt of all messages */
+  while (rs->first_unacked_msg != rs->next_tx_offset) {
+    int size;
+    mh = rs->ringmem + mask_ring_index(rs->first_unacked_msg);
+    size = wait_for_message_ready(mh, 0);
+    size &= ~MH_FLAGS;
+    rs->first_unacked_msg += size + sizeof(struct msg_header);
+  }
+
 }
 
 #ifdef USE_MWAIT
@@ -396,7 +409,19 @@ check_monitor_line_size(void)
 int
 main(int argc, char *argv[])
 {
-  test_t t = { test_name, init_test, run_parent, run_child };
+  test_t t = { 
+    .name = "mempipe_thr",
+    .is_latency_test = 0,
+    .init_test = init_test,
+    .init_parent = init_parent,
+    .finish_parent = parent_finish,
+    .init_child = init_child,
+    .finish_child = child_finish,
+    .get_write_buffer = get_write_buffer,
+    .release_write_buffer = release_write_buffer,
+    .get_read_buffer = get_read_buffer,
+    .release_read_buffer = release_read_buffer
+  };
   char *ring_order = getenv("MEMPIPE_RING_ORDER");
   check_monitor_line_size();
   if (ring_order) {

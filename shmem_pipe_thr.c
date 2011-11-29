@@ -7,6 +7,7 @@
    they're done. */
 #include <sys/poll.h>
 #include <sys/time.h>
+#include <sys/uio.h>
 #include <assert.h>
 #include <err.h>
 #include <inttypes.h>
@@ -35,6 +36,11 @@ static unsigned ring_order = 9;
 #define DBG(x) do { x; } while (0)
 #endif
 
+struct extent {
+	unsigned base;
+	unsigned size;
+};
+
 struct shmem_pipe {
 	void *ring;
 #ifndef UNSAFE_ALLOCATOR
@@ -47,14 +53,21 @@ struct shmem_pipe {
 	int child_to_parent_read, child_to_parent_write;
 	int parent_to_child_read, parent_to_child_write;
 
+  // Parent state
 	unsigned char rx_buf[EXTENT_BUFFER_SIZE];
 	unsigned rx_buf_prod;
 	unsigned rx_buf_cons;
-};
 
-struct extent {
-	unsigned base;
-	unsigned size;
+  // Child state
+	unsigned char incoming[EXTENT_BUFFER_SIZE];
+	struct extent outgoing_extents[EXTENT_BUFFER_SIZE/sizeof(struct extent)];
+        int incoming_bytes;
+        int incoming_bytes_consumed;
+        unsigned nr_outgoing_extents;
+	unsigned outgoing_extent_bytes;
+  
+        struct iovec iov;
+
 };
 
 #ifdef UNSAFE_ALLOCATOR
@@ -451,90 +464,92 @@ init_test(test_data *td)
 }
 
 static void
-populate_message(void *buf, int size, int mode, void *local_buf, int i)
-{
-	switch (mode) {
-	case MODE_DATAINPLACE:
-		memset(buf, i, size);
-		break;
-	case MODE_DATAEXT:
-		memset(local_buf, i, size);
-	case MODE_NODATA:
-		memcpy(buf, local_buf, size);
-		break;
-	default:
-		abort();
-	}
-}
-
-static void
-consume_message(const void *buf, int size, void *outbuf)
-{
-	memcpy(outbuf, buf, size);
-}
-
-static void
-run_child(test_data *td)
+init_child(test_data *td)
 {
 	struct shmem_pipe *sp = td->data;
-	unsigned char incoming[EXTENT_BUFFER_SIZE];
-	struct extent outgoing_extents[EXTENT_BUFFER_SIZE/sizeof(struct extent)];
-	int incoming_bytes = 0;
-	unsigned nr_outgoing_extents = 0;
-	int i;
-	int k;
-	void *rx_buf = malloc(td->size);
-	unsigned outgoing_extent_bytes;
 
-	outgoing_extent_bytes = 0;
+	sp->outgoing_extent_bytes = 0; // DATA bytes described by queued outgoing extents
+        sp->nr_outgoing_extents = 0;
+        sp->incoming_bytes = 0; // METADATA bytes in the incoming extent buffer
+	sp->incoming_bytes_consumed = 0; // of which, already consumed
 
 	close(sp->child_to_parent_read);
 	close(sp->parent_to_child_write);
-	while (1) {
-		k = read(sp->parent_to_child_read,
-			 (void *)incoming + incoming_bytes,
-			 sizeof(incoming) - incoming_bytes);
-		if (k == 0)
-			goto eof;
-		if (k < 0)
-			err(1, "child read");
-		incoming_bytes += k;
+}
 
-		for (i = 0;
-		     i < incoming_bytes / sizeof(struct extent);
-		     i++) {
-			struct extent *inc = &((struct extent *)incoming)[i];
-			struct extent *out;
-			assert(inc->base <= ring_size);
-			assert(inc->base + inc->size <= ring_size);
-			consume_message(sp->ring + inc->base, inc->size, rx_buf);
-			out = &outgoing_extents[nr_outgoing_extents-1];
-			/* Try to reuse previous outgoing extent */
-			if (nr_outgoing_extents != 0 &&
-			    out->base + out->size == inc->base) {
-				out->size += inc->size;
-			} else {
-				outgoing_extents[nr_outgoing_extents] = *inc;
-				nr_outgoing_extents++;
-			}
-			outgoing_extent_bytes += inc->size;
-		}
-		memmove(incoming, incoming + i * sizeof(struct extent), incoming_bytes - i * sizeof(struct extent));
-		incoming_bytes -= i * sizeof(struct extent);
+static struct iovec* get_read_buffer(test_data* td, int len, int* n_vecs) {
 
-		if (outgoing_extent_bytes > ring_size / 8) {
-			xwrite(sp->child_to_parent_write,
-			       outgoing_extents,
-			       nr_outgoing_extents * sizeof(struct extent));
-			nr_outgoing_extents = 0;
-			outgoing_extent_bytes = 0;
-		}
-	}
+  struct shmem_pipe *sp = td->data;
 
-eof:
-	close(sp->child_to_parent_write);
-	close(sp->parent_to_child_read);
-	return;
+  while(sp->incoming_bytes_consumed - sp->incoming_bytes < sizeof(struct extent)) {
+
+    int k = read(sp->parent_to_child_read,
+		 (void *)sp->incoming + sp->incoming_bytes,
+		 sizeof(sp->incoming) - sp->incoming_bytes);
+    if (k == 0) {
+      close(sp->child_to_parent_write);
+      close(sp->parent_to_child_read);
+      *n_vecs = 0;
+      return 0;
+    }
+    if (k < 0)
+      err(1, "child read");
+    sp->incoming_bytes += k;
+
+  }
+  
+  struct extent *inc = (struct extent*)(sp->incoming + sp->incoming_bytes_consumed);
+  assert(inc->base <= ring_size);
+  assert(inc->base + inc->size <= ring_size);
+
+  sp->iov.iov_base = sp->ring + inc->base;
+  sp->iov.iov_len = inc->size;
+  *n_vecs = 1;
+  return &sp->iov;
+
+}
+
+static void release_read_buffer(test_data* td, struct iovec* vecs, int nvecs) {
+
+  struct shmem_pipe *sp = td->data;
+
+  assert(nvecs == 1 && vecs == &sp->iov);
+
+  struct extent *inc = (struct extent*)(sp->incoming + sp->incoming_bytes_consumed);
+  assert(sp->ring + inc->base == vecs[0].iov_base);
+  assert(inc->size == vecs[0].iov_len);
+
+  // Dismiss this incoming extent
+  sp->incoming_bytes_consumed += sizeof(struct extent);
+
+  if(sp->incoming_bytes_consumed - sp->incoming_bytes < sizeof(struct extent)) {
+    memmove(sp->incoming, sp->incoming + sp->incoming_bytes_consumed, sp->incoming_bytes - sp->incoming_bytes_consumed);
+    sp->incoming_bytes -= sp->incoming_bytes_consumed;
+    sp->incoming_bytes_consumed = 0;
+  }
+
+  // Queue it for transmission back to the writer
+  struct extent *out;
+  out = &sp->outgoing_extents[sp->nr_outgoing_extents-1];
+  /* Try to reuse previous outgoing extent */
+  if (sp->nr_outgoing_extents != 0 && out->base + out->size == inc->base) {
+    out->size += inc->size;
+  } else {
+    sp->outgoing_extents[sp->nr_outgoing_extents] = *inc;
+    sp->nr_outgoing_extents++;
+  }
+  sp->outgoing_extent_bytes += inc->size;
+
+  // Send the queued extents, if the queue is big enough
+
+  if (sp->outgoing_extent_bytes > ring_size / 8) {
+    xwrite(sp->child_to_parent_write,
+	   sp->outgoing_extents,
+	   sp->nr_outgoing_extents * sizeof(struct extent));
+    sp->nr_outgoing_extents = 0;
+    sp->outgoing_extent_bytes = 0;
+  }
+
 }
 
 static void
@@ -560,67 +575,83 @@ wait_for_returned_buffers(struct shmem_pipe *sp)
 	sp->rx_buf_prod %= sizeof(struct extent);
 }
 
-static void
-send_a_message(struct shmem_pipe *sp, int message_size, int mode, void *buf, int i)
+static struct iovec*
+get_write_buffer(test_data* td, int message_size, int* n_vecs)
 {
-	unsigned long offset;
-	struct extent ext;
+  struct shmem_pipe *sp = td->data;
+  unsigned long offset;
 
-	while ((offset = alloc_shared_space(sp, message_size)) == ALLOC_FAILED)
-		wait_for_returned_buffers(sp);
+  while ((offset = alloc_shared_space(sp, message_size)) == ALLOC_FAILED)
+    wait_for_returned_buffers(sp);
 
-	populate_message(sp->ring + offset, message_size, mode, buf, i);
+  sp->iov.iov_base = sp->ring + offset;
+  sp->iov.iov_len = message_size;
 
-	ext.base = offset;
-	ext.size = message_size;
-
-	xwrite(sp->parent_to_child_write, &ext, sizeof(ext));
-
-	assert(sp->nr_alloc_nodes <= 3);
+  *n_vecs = 1;
+  return &sp->iov;
 }
 
 static void
-flush_buffers(struct shmem_pipe *sp)
+release_write_buffer(test_data* td, struct iovec* vecs, int nvecs)
 {
-	char buf[1024];
-	int r;
+  struct shmem_pipe *sp = td->data;
+  struct extent ext;
 
-	close(sp->parent_to_child_write);
-	/* Wait for the other pipe to drain, which confirms receipt of
-	   all messages. */
-	while (1) {
-		r = read(sp->child_to_parent_read, buf, sizeof(buf));
-		if (r == 0)
-			break;
-		if (r < 0)
-			err(1, "reading in parent for child shutdown");
-	}
-	close(sp->child_to_parent_read);
+  assert(nvecs == 1 && vecs == &sp->iov);
+
+  unsigned long offset = vecs[0].iov_base - sp->ring;
+  ext.base = offset;
+  ext.size = vecs[0].iov_len;
+
+  xwrite(sp->parent_to_child_write, &ext, sizeof(ext));
+
+  assert(sp->nr_alloc_nodes <= 3);
 }
 
 static void
-run_parent(test_data *td)
+parent_finish(test_data* td)
 {
-	struct shmem_pipe *sp = td->data;
-	void *local_buf = malloc(td->size);
+  struct shmem_pipe *sp = td->data;
+  char buf[1024];
+  int r;
 
-	close(sp->child_to_parent_write);
-	close(sp->parent_to_child_read);
+  close(sp->parent_to_child_write);
+  /* Wait for the other pipe to drain, which confirms receipt of
+     all messages. */
+  while (1) {
+    r = read(sp->child_to_parent_read, buf, sizeof(buf));
+    if (r == 0)
+      break;
+    if (r < 0)
+      err(1, "reading in parent for child shutdown");
+  }
+  close(sp->child_to_parent_read);
+}
 
-	thr_test(
-		send_a_message(sp, td->size, td->mode, local_buf, i),
-		flush_buffers(sp),
-		td);
+static void
+init_parent(test_data *td)
+{
+  struct shmem_pipe *sp = td->data;
+
+  close(sp->child_to_parent_write);
+  close(sp->parent_to_child_read);
 }
 
 int
 main(int argc, char *argv[])
 {
-	test_t t = { "shmem_pipe"
-#ifdef SOS22_MEMSET
-		     "_sos22"
-#endif
-		     , init_test, run_parent, run_child };
+	test_t t = 
+	  { .name = "shmem_pipe_thr",
+	    .is_latency_test = 0,
+	    .init_test = init_test,
+	    .init_parent = init_parent,
+	    .finish_parent = parent_finish,
+	    .init_child = init_child,
+	    .get_write_buffer = get_write_buffer,
+	    .release_write_buffer = release_write_buffer,
+	    .get_read_buffer = get_read_buffer,
+	    .release_read_buffer = release_read_buffer
+	  };
 	char *_ring_order = getenv("SHMEM_RING_ORDER");
 	if (_ring_order) {
 		int as_int;

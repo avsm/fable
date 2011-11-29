@@ -58,48 +58,57 @@ init_test(test_data *td)
 }
 
 static void
-run_child(test_data *td)
+child_ping(test_data *td)
 {
   volatile struct shared_page *sp = td->data;
-  int i;
+  sp->flag1 = 1;
+  while (!sp->flag2)
+    ;
+  sp->flag1 = 0;
+  while (sp->flag2)
+    ;
+}
 
-  for (i = 0; i < td->count; i++) {
-    sp->flag1 = 1;
-    while (!sp->flag2)
-      ;
-    sp->flag1 = 0;
-    while (sp->flag2)
-      ;
-  }
+static void child_finish(test_data *td) {
+  volatile struct shared_page *sp = td->data;
   sp->flag1 = 1;
 }
 
 static void
-run_parent(test_data *td)
+parent_init(test_data *td)
 {
   volatile struct shared_page *sp = td->data;
 
   /* Wait for the child to get ready before starting the test. */
   while (!sp->flag1)
     ;
+}
 
-  latency_test(
-    do {
-      sp->flag2 = 1;
-      while (sp->flag1)
-	;
-      sp->flag2 = 0;
-      while (!sp->flag1)
-	;
-    } while (0),
-    td
-  );
+static void parent_ping(test_data* td) {
+
+  volatile struct shared_page *sp = td->data;
+
+  sp->flag2 = 1;
+  while (sp->flag1)
+    ;
+  sp->flag2 = 0;
+  while (!sp->flag1)
+    ;
+
 }
 
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "mempipe_lat", init_test, run_parent, run_child };
+  test_t t = { 
+    .name = "mempipe_lat",
+    .is_latency_test = 1,
+    .init_test = init_test, 
+    .init_parent = parent_init,
+    .parent_ping = parent_ping,
+    .child_ping = child_ping,
+    .finish_child = child_finish
+  };
   run_test(argc, argv, &t);
   return 0;
 }

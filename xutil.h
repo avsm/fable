@@ -32,7 +32,7 @@ void xwrite(int, const void *, size_t);
 
 void setaffinity(int);
 void parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count,
-		int *first_cpu, int *second_cpu, int *parallel, char **output_dir, int *mode,
+		int *first_cpu, int *second_cpu, int *parallel, char **output_dir, int *wip, int *rip, int *prod, int *do_verify,
 		int *numa_node);
 void *establish_shm_segment(int nr_pages, int numa_node);
 

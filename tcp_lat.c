@@ -37,9 +37,16 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <netinet/tcp.h>
 
 #include "test.h"
 #include "xutil.h"
+
+struct tcp_state {
+  struct addrinfo* info;
+  int fd;
+  void* buf;
+};
 
 static void
 init_test(test_data *td)
@@ -47,24 +54,27 @@ init_test(test_data *td)
   int ret;
   char portbuf[32];
   struct addrinfo hints;
+  struct tcp_state* ts = (struct tcp_state*)xmalloc(sizeof(struct tcp_state));
+  td->data = ts;
   int port = 3490+td->num;
   snprintf(portbuf, sizeof portbuf, "%d", port);
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
-  if ((ret = getaddrinfo("127.0.0.1", portbuf, &hints, (struct addrinfo **)&td->data)) != 0)
+  if ((ret = getaddrinfo("127.0.0.1", portbuf, &hints, (struct addrinfo **)&ts->info)) != 0)
     errx(1, "getaddrinfo: %s\n", gai_strerror(ret));
 }
 
 static void
-run_child(test_data *td)
+child_init(test_data *td)
 {
   int sockfd, new_fd, i;
-  struct addrinfo *res = (struct addrinfo *)td->data;
+  struct tcp_state* ts = (struct tcp_state*)td->data;
+  ts->buf = xmalloc(td->size);
+  struct addrinfo *res = ts->info;
   struct sockaddr_storage their_addr;
   socklen_t addr_size;
-  void *buf = xmalloc(td->size);
  
   if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
     err(1, "socket");
@@ -83,38 +93,61 @@ run_child(test_data *td)
   if ((new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &addr_size)) == -1)
     err(1, "accept");
 
-  for (i = 0; i < td->count; i++) {
-    xread(new_fd, buf, td->size);
-    xwrite(new_fd, buf, td->size);
-  }
+#ifdef USE_NODELAY
+  int flag = 1;
+  if (setsockopt(new_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) == -1)
+    err(1, "setsockopt");
+#endif
+
+  ts->fd = new_fd;
+}
+
+static void child_ping(test_data* td) {
+  struct tcp_state* ts = (struct tcp_state*)td->data;
+  xread(ts->fd, ts->buf, td->size);
+  xwrite(ts->fd, ts->buf, td->size);
 }
 
 static void
-run_parent(test_data *td)
+init_parent(test_data *td)
 {
-  struct addrinfo *res = (struct addrinfo *)td->data;
+  struct tcp_state* ts = (struct tcp_state*)td->data;
+  ts->buf = xmalloc(td->size);
+  struct addrinfo *res = ts->info;
   int sockfd;
-  void *buf = xmalloc(td->size);
-  sleep(1); 
   if ((sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
     err(1, "socket");
     
-  if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
-    err(1, "connect");
+  while (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1)
+    { }
 
-  latency_test(
-    do {
-      xwrite(sockfd, buf, td->size);
-      xread(sockfd, buf, td->size);
-    } while (0),
-    td
-  );
+#ifdef USE_NODELAY
+  int flag = 1;
+  if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(int)) == -1)
+    err(1, "setsockopt");
+#endif
+
+  ts->fd = sockfd;
+}
+
+static void parent_ping(test_data* td) {
+  struct tcp_state* ts = (struct tcp_state*)td->data;
+  xwrite(ts->fd, ts->buf, td->size);
+  xread(ts->fd, ts->buf, td->size);
 }
 
 int
 main(int argc, char *argv[])
 {
-  test_t t = { "tcp_lat", init_test, run_parent, run_child };
+  test_t t = { 
+    .name = "tcp_lat", 
+    .is_latency_test = 1,
+    .init_test = init_test, 
+    .init_parent = init_parent,
+    .init_child = child_init,
+    .parent_ping = parent_ping,
+    .child_ping = child_ping
+};
   run_test(argc, argv, &t);
   return 0;
 }

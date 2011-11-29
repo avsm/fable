@@ -175,7 +175,8 @@ help(char *argv[])
 
 void
 parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *count, int *first_cpu, int *second_cpu,
-	   int *parallel, char **output_dir, int *mode, int *numa_node)
+	   int *parallel, char **output_dir, int *write_in_place, int *read_in_place, int *produce_method, int *do_verify,
+	   int *numa_node)
 {
   int opt;
   *per_iter_timings = false;
@@ -185,9 +186,12 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
   *size = 1024;
   *count = 100;
   *output_dir = "results";
-  *mode = 0;
-  *numa_node = -1;
-  while((opt = getopt(argc, argv, "h?tp:a:b:s:c:o:m:n:")) != -1) {
+  *numa_node = 1;
+  *produce_method = 0;
+  *read_in_place = 0;
+  *write_in_place = 0;
+  *do_verify = 0;
+  while((opt = getopt(argc, argv, "h?tp:a:b:s:c:o:wrvm:n:")) != -1) {
     switch(opt) {
      case 't':
       *per_iter_timings = true;
@@ -211,7 +215,16 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       *output_dir = optarg;
       break;
      case 'm':
-      *mode = atoi(optarg);
+      *produce_method = atoi(optarg);
+      break;
+     case 'r':
+      *read_in_place = 1;
+      break;
+     case 'w':
+      *write_in_place = 1;
+      break;
+    case 'v':
+      *do_verify = 1;
       break;
     case 'n':
       *numa_node = atoi(optarg);
@@ -224,9 +237,11 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
       help(argv);
     }
   }
-  fprintf(stderr, "size %d count %" PRId64 " first_cpu %d second_cpu %d parallel %d tsc %d output_dir %s numa_node %d\n",
-	  *size, *count, *first_cpu, *second_cpu, *parallel, *per_iter_timings,
-	  *output_dir, *numa_node);
+
+  fprintf(stderr, "size %d count %" PRId64 " first_cpu %d second_cpu %d parallel %d tsc %d produce-method %d %s %s numa_node %d output_dir %s\n",
+	  *size, *count, *first_cpu, *second_cpu, *parallel, *per_iter_timings, *produce_method, *read_in_place ? "read-in-place" : "copy-read", *write_in_place ? "write-in-place" : "copy-write",
+	  *numa_node,
+	  *output_dir);
 }
 
 void
