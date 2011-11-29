@@ -97,8 +97,14 @@ tcp_data = get_data(tcp_filename)
 
 for dst_core in cores:
   # get data series
-  mempipe_spin_unsafe_series = get_series(mempipe_spin_data, dst_core, safe=0)
-  mempipe_spin_safe_series = get_series(mempipe_spin_data, dst_core, safe=1)
+  if dst_core != 0:
+    mempipe_spin_unsafe_series = get_series(mempipe_spin_data, dst_core, safe=0)
+    mempipe_spin_safe_series = get_series(mempipe_spin_data, dst_core, safe=1)
+  else:
+    # if we have dst_core set to 0 (i.e. we're communicating with ourselves), we skip
+    # the spin test, so we set the values to zero here (they are not in the result files)
+    mempipe_spin_unsafe_series = [0, 0, 0]
+    mempipe_spin_safe_series = [0, 0, 0]
   mempipe_futex_unsafe_series = get_series(mempipe_futex_data, dst_core, safe=0)
   mempipe_futex_safe_series = get_series(mempipe_futex_data, dst_core, safe=1)
   shmpipe_unsafe_series = get_series(shmpipe_data, dst_core, safe=1)
