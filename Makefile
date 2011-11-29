@@ -7,7 +7,7 @@ TARGETS=tcp_lat tcp_thr tcp_nodelay_thr tcp_nodelay_lat
 TARGETS+=pipe_lat pipe_thr unix_lat unix_thr
 TARGETS+=mempipe_lat mempipe_thr mempipe_sos22_thr
 TARGETS+=vmsplice_pipe_thr vmsplice_hugepages_pipe_thr vmsplice_hugepages_coop_pipe_thr vmsplice_coop_pipe_thr
-TARGETS+=shmem_pipe_thr
+TARGETS+=shmem_pipe_thr futex_lat
 TARGETS+=summarise_tsc_counters
 
 all: $(TARGETS)
