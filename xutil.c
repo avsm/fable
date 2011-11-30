@@ -186,7 +186,7 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
   *size = 1024;
   *count = 100;
   *output_dir = "results";
-  *numa_node = 1;
+  *numa_node = -1;
   *produce_method = 0;
   *read_in_place = 0;
   *write_in_place = 0;
@@ -271,16 +271,6 @@ establish_shm_segment(int nr_pages, int numa_node)
   struct bitmask *alloc_nodes;
   struct bitmask *old_mask;
 
-  if (numa_node != -1) {
-    old_mask = numa_get_membind();
-    alloc_nodes = numa_allocate_nodemask();
-    numa_bitmask_setbit(alloc_nodes, numa_node);
-    numa_set_membind(alloc_nodes);
-  } else {
-    /* Shut the compiler up */
-    alloc_nodes = old_mask = (struct bitmask *)0xf001ul;
-  }
-
   fd = shm_open("/memflag_lat", O_RDWR|O_CREAT|O_EXCL, 0600);
   if (fd < 0)
     err(1, "shm_open(\"/memflag_lat\")");
@@ -291,13 +281,11 @@ establish_shm_segment(int nr_pages, int numa_node)
 	      fd, 0);
   if (addr == MAP_FAILED)
     err(1, "mapping shared memory segment");
-  close(fd);
 
-  if (numa_node != -1) {
-    numa_set_membind(old_mask);
-    numa_bitmask_free(old_mask);
-    numa_bitmask_free(alloc_nodes);
-  }
+  if(numa_node != -1)
+    numa_tonode_memory(addr, PAGE_SIZE * nr_pages, numa_node);
+
+  close(fd);
 
   return addr;
 }
