@@ -128,6 +128,21 @@ void unbind_evtchn(evtchn_port_t port )
         
 }
 
+evtchn_port_t bind_ipi(uint32_t vcpu, evtchn_handler_t handler, void *data)
+{
+	struct evtchn_bind_ipi bind;
+	int rc;
+
+	bind.vcpu = vcpu;
+	rc = HYPERVISOR_event_channel_op(EVTCHNOP_bind_ipi, &bind);
+	if (rc != 0) {
+		printk("Cannot bind IPI for vcpu %d (code %d)!\n", vcpu, rc);
+		return -1;
+	}
+	bind_evtchn(bind.port, handler, data);
+	return bind.port;
+}
+
 evtchn_port_t bind_virq(uint32_t virq, evtchn_handler_t handler, void *data)
 {
 	evtchn_bind_virq_t op;

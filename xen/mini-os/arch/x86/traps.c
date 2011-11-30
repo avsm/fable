@@ -299,7 +299,7 @@ void do_spurious_interrupt_bug(struct pt_regs * regs)
  * The 'privilege ring' field specifies the least-privileged ring that
  * can trap to that vector using a software-interrupt instruction (INT).
  */
-static trap_info_t trap_table[] = {
+trap_info_t trap_table[] = {
     {  0, 0, __KERNEL_CS, (unsigned long)divide_error                },
     {  1, 0, __KERNEL_CS, (unsigned long)debug                       },
     {  3, 3, __KERNEL_CS, (unsigned long)int3                        },
