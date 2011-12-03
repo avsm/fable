@@ -34,11 +34,15 @@
 #include <inttypes.h>
 #include <netdb.h>
 #include <assert.h>
-#include <netinet/tcp.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
 #include <errno.h>
+
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include "test.h"
 #include "xutil.h"
