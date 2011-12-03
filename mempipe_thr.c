@@ -43,7 +43,6 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
-#include <linux/futex.h>
 #include <assert.h>
 #include <err.h>
 #include <errno.h>
@@ -53,6 +52,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/uio.h>
 
 #undef USE_MWAIT
 #ifndef NO_FUTEX
@@ -61,7 +61,11 @@
 
 #include "test.h"
 #include "xutil.h"
+
+#ifdef Linux
+#include <linux/futex.h>
 #include "futex.h"
+#endif
 
 #define PAGE_SIZE 4096
 #define CACHE_LINE_SIZE 64
@@ -357,7 +361,11 @@ void parent_finish(test_data* td) {
 
   mh = rs->ringmem + mask_ring_index(rs->next_tx_offset);
   mh->size_and_flags = MH_FLAG_READY | MH_FLAG_STOP;
+#ifdef USE_FUTEX
   futex_wake(&mh->size_and_flags);
+#else
+  errx(1, "do something non-futexy to sync with parent here");
+#endif
 
   /* Wait for child to acknowledge receipt of all messages */
   while (rs->first_unacked_msg != rs->next_tx_offset) {
