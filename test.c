@@ -71,6 +71,7 @@ wait_for_children_to_finish(void)
 }
 
 static void stosmemset(void* buf, int byte, size_t count) {
+#ifdef USE_INLINE_ASM
   int clobber;
   assert(count % 8 == 0);
   asm volatile ("rep stosq\n"
@@ -79,10 +80,13 @@ static void stosmemset(void* buf, int byte, size_t count) {
 		  "D" (buf),
 		  "0" (count / 8)
 		: "memory");
+#else
+  errx(1, "stosmemset: not implemented");
+#endif
 }
 
 static int repmemcmp(void* buf, int byte, size_t count) {
-
+#ifdef USE_INLINE_ASM
   unsigned long clobber;
   void* clobber2;
   char result;
@@ -97,7 +101,9 @@ static int repmemcmp(void* buf, int byte, size_t count) {
 	 "D" (buf)
        );
   return result;
-       
+#else
+  errx(1, "repmemcmp: not implemented");
+#endif
 }
 
 void parent_main(test_t* test, test_data* td, int is_latency_test) {

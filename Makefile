@@ -6,10 +6,16 @@ endif
 ifeq ($(uname),OpenBSD)
 all_target := openbsd
 endif
+ifeq ($(uname),Darwin)
+all_target := darwin
+endif
+
 
 .PHONY: all clean run
 
-CFLAGS := -g -Wall -O3 -D_GNU_SOURCE -DNDEBUG -std=gnu99
+CFLAGS_Linux = -DUSE_INLINE_ASM
+CFLAGS_OpenBSD = -DUSE_INLINE_ASM
+CFLAGS += -g -Wall -O3 -D_GNU_SOURCE -DNDEBUG -std=gnu99 $(CFLAGS_$(uname))
 
 LDFLAGS_Linux := -lrt -lnuma
 LDFLAGS += -lm $(LDFLAGS_$(uname))
@@ -23,6 +29,7 @@ TARGETS_Linux += shmem_pipe_thr futex_lat
 TARGETS_POSIX += summarise_tsc_counters
 
 TARGETS_OpenBSD := 
+TARGETS_Darwin :=
 
 TARGETS := $(TARGETS_POSIX) $(TARGETS_$(uname))
 
