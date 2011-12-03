@@ -1,15 +1,36 @@
-CFLAGS = -g -Wall -O3 -D_GNU_SOURCE -DNDEBUG -std=gnu99
-LDFLAGS+=-lm
+all_target := posix
+uname := $(shell uname -s)
+ifeq ($(uname),Linux)
+all_target := linux
+endif
+ifeq ($(uname),OpenBSD)
+all_target := openbsd
+endif
 
 .PHONY: all clean run
 
-TARGETS=pipe_thr tcp_thr tcp_nodelay_thr unix_thr mempipe_thr mempipe_spin_thr
-TARGETS+=vmsplice_pipe_thr vmsplice_hugepages_pipe_thr vmsplice_hugepages_coop_pipe_thr vmsplice_coop_pipe_thr
-TARGETS+=shmem_pipe_thr futex_lat
-TARGETS+=pipe_lat unix_lat tcp_lat tcp_nodelay_lat mempipe_lat
-TARGETS+=summarise_tsc_counters
+CFLAGS := -g -Wall -O3 -D_GNU_SOURCE -DNDEBUG -std=gnu99
+
+LDFLAGS_Linux := -lrt
+LDFLAGS += -lm $(LDFLAGS_$(uname))
+
+TARGETS_POSIX := pipe_thr tcp_thr tcp_nodelay_thr unix_thr mempipe_thr mempipe_spin_thr
+TARGETS_Linux += vmsplice_pipe_thr vmsplice_hugepages_pipe_thr vmsplice_hugepages_coop_pipe_thr vmsplice_coop_pipe_thr
+
+TARGETS_POSIX += pipe_lat unix_lat tcp_lat tcp_nodelay_lat mempipe_lat
+TARGETS_Linux += shmem_pipe_thr futex_lat
+
+TARGETS_POSIX += summarise_tsc_counters
+
+TARGETS_OpenBSD := 
+
+TARGETS := $(TARGETS_POSIX) $(TARGETS_$(uname))
+
+x-%:
+	echo $($*)
 
 all: $(TARGETS)
+	@ :
 
 %_lat: atomicio.o test.o xutil.o %_lat.o
 	$(CC) -lrt -lnuma $(CFLAGS) -o $@ $^
