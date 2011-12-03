@@ -186,7 +186,7 @@ void parent_main(test_t* test, test_data* td, int is_latency_test) {
   if (is_latency_test)								
     logmsg(td,							
 	   "headline",						
-	   "%s %d %" PRId64 " %fs\n", td->name, td->size, td->count,
+	   "%s %d %" PRIu64 " %fs\n", td->name, td->size, td->count,
 	   delta / (td->count * 1e6));				
   else								
     logmsg(td,							
