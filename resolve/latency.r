@@ -1,4 +1,5 @@
 library(gplots)
+library(RSvgDevice)  
 
 matrix.axes <- function(data) {
     a <- ((1:48)-1) / 48
@@ -16,10 +17,10 @@ plot_grid <- function (arch, test) {
   filled.contour(inp, zlim=r, plot.axes=matrix.axes(inp), nlevels=ncols, title=title(t))
 }
 
-pdf(file="latency.pdf", paper="a4")
-par(mfrow=c(2,2))
 for (arch in c("48native", "48xenpin", "48xennopin")) {
   for (test in c("mempipe_lat", "pipe_lat", "unix_lat", "tcp_lat")) {
+    f <- sprintf("latency-%s-%s.pdf", arch, test)
+    pdf(file=f)
     plot_grid(arch, test)
   }
 }
