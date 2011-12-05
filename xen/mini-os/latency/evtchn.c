@@ -1,7 +1,6 @@
 #include <mini-os/os.h>
 #include <mini-os/events.h>
 #include <mini-os/sched.h>
-#include <xen/vcpu.h>
 
 #define NR_ITERATIONS 1000000
 
@@ -17,7 +16,7 @@ client_handler(evtchn_port_t port, struct pt_regs *regs, void *_cntr)
 	int *cntr = _cntr;
 	if (*cntr == -1)
 		return;
-	if (*cntr < NR_ITERATIONS)
+	if (*cntr < NR_ITERATIONS || 1)
 		notify_remote_via_evtchn(port);
 	(*cntr)++;
 }
@@ -93,7 +92,7 @@ run_client(void)
 	if (r != 0)
 		printk("Failed to notify remote on port %d!\n", local_port);
 
-	while (cntr < NR_ITERATIONS)
+	while (cntr < NR_ITERATIONS || 1)
 		;
 
 	end = NOW();
@@ -103,117 +102,132 @@ run_client(void)
 }
 
 static evtchn_port_t cpu0_port, cpu1_port;
-
-static unsigned char new_vcpu_stack[8192];
-static void
-__start_new_vcpu(unsigned long arg)
-{
-	printk("I am a new vcpu %ld\n", arg);
-	for (;;)
-		;
-}
-
-extern struct trap_info trap_table[];
-void hypervisor_callback(void);
-void failsafe_callback(void);
+static long cpu1_cntr;
 
 static void
 cpu1_handler(evtchn_port_t port, struct pt_regs *regs, void *ignore)
 {
+	if (smp_processor_id() != 1)
+		printk("cpu1_handler running on vcpu %d\n", smp_processor_id());
+	unmask_evtchn(port);
 	notify_remote_via_evtchn(cpu0_port);
+	cpu1_cntr++;
 }
 
+struct cpu0_state {
+	long cntr;
+	long last_report_cntr;
+	unsigned long last_report_time;
+	unsigned long start;
+};
+
 static void
-cpu0_handler(evtchn_port_t port, struct pt_regs *regs, void *_cntr)
+cpu0_handler(evtchn_port_t port, struct pt_regs *regs, void *_state)
 {
-	int *cntr = _cntr;
-	if (*cntr == -1)
+	struct cpu0_state *state = _state;
+	unmask_evtchn(port);
+	if (state->cntr == -1)
 		return;
-	if (*cntr < NR_ITERATIONS)
-		notify_remote_via_evtchn(cpu1_port);
-	(*cntr)++;
+	if (smp_processor_id() != 0)
+		printk("cpu0_handler running on vcpu %d\n", smp_processor_id());
+	notify_remote_via_evtchn(cpu1_port);
+	state->cntr++;
+	if (state->cntr == state->last_report_cntr + NR_ITERATIONS) {
+		unsigned long now_time = NOW();
+		printk("Took %ld nanoseconds for %d iterations (%ld each); total %ld for %d (%ld) (cpu 1 did %ld)\n",
+		       now_time - state->last_report_time,
+		       state->cntr - state->last_report_cntr,
+		       (now_time - state->last_report_time) / (state->cntr - state->last_report_cntr),
+		       now_time - state->start,
+		       state->cntr,
+		       (now_time - state->start) / state->cntr,
+			cpu1_cntr);
+		state->last_report_cntr = state->cntr;
+		state->last_report_time = now_time;
+	}
+}
+
+void boot_vcpu(int id, void (*callback)(void), start_info_t *si);
+void bind_evtchn_to_vcpu0(int idx);
+void bind_evtchn_to_vcpu1(int idx);
+
+static void
+start_vcpu1(void)
+{
+	printk("Running in vcpu %d\n", smp_processor_id());
+	cpu1_port = bind_ipi(1, cpu1_handler, NULL);
+	unmask_evtchn(cpu1_port);
+	printk("CPU %d(1) bound to port %d\n", smp_processor_id(), cpu1_port);
+	bind_evtchn_to_vcpu1(cpu1_port);
+	for (;;)
+		;
 }
 
 static void
 run_intradomain(start_info_t *si)
 {
-	/* Bring up an additional vcpu */
-	struct vcpu_guest_context initial_state = {};
-	struct cpu_user_regs *regs = &initial_state.user_regs;
-	struct trap_info *traps = &initial_state.trap_ctxt[0];
+	struct cpu0_state state = {};
 	int r;
-	int cntr;
-	unsigned long start, end;
 
-	cntr = -1;
-	cpu0_port = bind_ipi(0, cpu0_handler, &cntr);
-	cpu1_port = bind_ipi(1, cpu1_handler, NULL);
-	if (cpu0_port == -1 || cpu1_port == -1) {
+	cpu1_cntr = -1;
+	state.cntr = -1;
+	cpu1_port = -1;
+
+	cpu0_port = bind_ipi(0, cpu0_handler, &state);
+	if (cpu0_port == -1) {
 		printk("failed to set up IPI ports\n");
 		return;
 	}
+	bind_evtchn_to_vcpu0(cpu0_port);
 
 	unmask_evtchn(cpu0_port);
-	unmask_evtchn(cpu1_port);
 
-	initial_state.flags = VGCF_in_kernel;
-
-	regs->rip = (unsigned long)__start_new_vcpu;
-	regs->rsp = (unsigned long)new_vcpu_stack + sizeof(new_vcpu_stack);
-	regs->rdi = 0xf001;
-	regs->cs = FLAT_KERNEL_CS;
-	regs->ss = FLAT_KERNEL_SS;
-	regs->es = FLAT_KERNEL_DS;
-	regs->ds = FLAT_KERNEL_DS;
-	regs->fs = FLAT_KERNEL_DS;
-	regs->gs = FLAT_KERNEL_DS;
-
-	initial_state.kernel_ss = FLAT_KERNEL_DS;
-	initial_state.ctrlreg[3] = virt_to_mach(si->pt_base);
-	memcpy(traps, trap_table, sizeof(trap_table[0]) * 17);
-	initial_state.event_callback_eip = (unsigned long)hypervisor_callback;
-	initial_state.failsafe_callback_eip = (unsigned long)failsafe_callback;
-
-	r = HYPERVISOR_vcpu_op(VCPUOP_initialise, 1, &initial_state);
-	if (r != 0) {
-		printk("cannot initialise vcpu 1\n");
-		return;
-	}
-	r = HYPERVISOR_vcpu_op(VCPUOP_up, 1, NULL);
-	if (r != 0) {
-		printk("cannot up vcpu 1\n");
-		return;
-	}
+	boot_vcpu(1, start_vcpu1, si);
 
 	printk("vcpu 1 launched\n");
 	msleep(900);
 
-	cntr = 0;
-	start = NOW();
+	state.last_report_time = state.start = NOW();
+	state.cntr = 0;
 	r = notify_remote_via_evtchn(cpu1_port);
 	if (r != 0)
 		printk("failed to wake cpu1 (%d)!\n", r);
 
-	while (cntr < NR_ITERATIONS)
+	while (1)
 		;
-	end = NOW();
 
+/*
+	end = NOW();
 	printk("All done; took %ld nanoseconds for %d(%d) iterations\n", end - start, NR_ITERATIONS, cntr);
+	xenbus_printf(XBT_NIL, "results", "res", "%ld", end - start);
+*/
 }
 
 static void
 real_app_main(void *_si)
 {
 	start_info_t *si = _si;
+	char *cmd_line = (char *)si->cmd_line;
+	int i;
+
 	printk("Real app main started\n");
-	if (!strcmp((char *)si->cmd_line, "server")) {
+	while (cmd_line[0] == ' ')
+		cmd_line++;
+	for (i = 0; cmd_line[i]; i++)
+		;
+	while (i >= 0 && (cmd_line[i] == 0 || cmd_line[i] == ' ')) {
+		cmd_line[i] = 0;
+		i--;
+	}
+	if (!strcmp(cmd_line, "server")) {
 		run_server();
-	} else if (!strcmp((char *)si->cmd_line, "client")) {
+	} else if (!strcmp(cmd_line, "client")) {
 		run_client();
-	} else if (!strcmp((char *)si->cmd_line, "intradomain")) {
+	} else if (!strcmp(cmd_line, "intradomain")) {
 		run_intradomain(si);
 	} else {
-		printk("Command line should say either server or client\n");
+		printk("Command line should say either server, client, or intradomain; actually says ``%s''\n",
+		       si->cmd_line);
 	}
 }
 

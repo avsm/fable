@@ -32,7 +32,17 @@
 
 #define active_evtchns(cpu,sh,idx)              \
     ((sh)->evtchn_pending[idx] &                \
+     get_cpu_evtchn_mask(idx) &			\
      ~(sh)->evtchn_mask[idx])
+
+static unsigned long get_cpu_evtchn_mask(int idx)
+{
+    unsigned long res;
+    asm ("movq %%gs:(%1), %0\n"
+	 : "=r" (res)
+	 : "r" (idx * 8 + 24));
+    return res;
+}
 
 int in_callback;
 
@@ -40,7 +50,7 @@ void do_hypervisor_callback(struct pt_regs *regs)
 {
     unsigned long  l1, l2, l1i, l2i;
     unsigned int   port;
-    int            cpu = 0;
+    int            cpu = smp_processor_id();
     shared_info_t *s = HYPERVISOR_shared_info;
     vcpu_info_t   *vcpu_info = &s->vcpu_info[cpu];
 
@@ -58,13 +68,26 @@ void do_hypervisor_callback(struct pt_regs *regs)
         l1i = __ffs(l1);
         l1 &= ~(1UL << l1i);
         
-        while ( (l2 = active_evtchns(cpu, s, l1i)) != 0 )
+        while ( 1 ) 
         {
-            l2i = __ffs(l2);
-            l2 &= ~(1UL << l2i);
+	    l2 = active_evtchns(cpu, s, l1i);
+	    if (l2 == 0)
+		break;
+	    while (l2 != 0) {
+		l2i = __ffs(l2);
+		l2 &= ~(1UL << l2i);
 
-            port = (l1i * (sizeof(unsigned long) * 8)) + l2i;
-			do_event(port, regs);
+		port = (l1i * (sizeof(unsigned long) * 8)) + l2i;
+		if (0) {
+		    printk("Fire port %d on cpu %d\n", port, cpu);
+		    printk("upcall in vcpu %d, l2 %lx, pending %lx, cpu mask %lx, evtchn mask %lx\n", cpu,
+			   l2,
+			   s->evtchn_pending[l1i],
+			   get_cpu_evtchn_mask(l1i),
+			   s->evtchn_mask[l1i]);
+		}
+		do_event(port, regs);
+	    }
         }
     }
 
