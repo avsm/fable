@@ -8,7 +8,7 @@ def get_data(filename, is_series):
   chunksize_colid = 3
   safe_colid = 6
 
-#  print filename
+#  print "%s %d" % (filename, is_series)
 
   if is_series:
     data = np.loadtxt(filename,
@@ -61,6 +61,7 @@ def autolabel(rects):
 #   (tigger's config is [0, 1, 6, 12, 18])
 
 cores = [0, 1, 6, 12, 18]  # the core IDs benchmarked (first ID of pair is always 0)
+#cores = [0, 1, 2]
 n_groups = 3  # three chunk sizes
 n_bars = 11   # number of bars (tests) per group
 
@@ -73,7 +74,7 @@ if len(sys.argv) < 3:
 
 res_dir = sys.argv[1]
 
-is_series = bool(sys.argv[2])
+is_series = int(sys.argv[2])
 
 # ---------------------------
 # Get result filenames
@@ -174,8 +175,8 @@ for dst_core in cores:
   else:
     mempipe_spin_unsafe_stddev_series = None
     mempipe_spin_safe_stddev_series = None
-    mempipe_futex_unsafe_series = None
-    mempipe_futex_safe_series = None
+    mempipe_futex_unsafe_stddev_series = None
+    mempipe_futex_safe_stddev_series = None
     shmpipe_unsafe_stddev_series = None
     shmpipe_safe_stddev_series = None
     vmsplice_stddev_series = None
