@@ -2,7 +2,9 @@
 #include <mini-os/events.h>
 #include <mini-os/sched.h>
 
-#define NR_ITERATIONS 1000000
+#define NR_ITERATIONS  1000000
+#define INITIAL_DISCARD 100000
+#define RUN_FOREVER 0
 
 static void
 server_handler(evtchn_port_t port, struct pt_regs *regs, void *ignore)
@@ -116,9 +118,12 @@ cpu1_handler(evtchn_port_t port, struct pt_regs *regs, void *ignore)
 
 struct cpu0_state {
 	long cntr;
+	unsigned long start;
+	int finished;
+#if RUN_FOREVER
 	long last_report_cntr;
 	unsigned long last_report_time;
-	unsigned long start;
+#endif
 };
 
 static void
@@ -128,10 +133,18 @@ cpu0_handler(evtchn_port_t port, struct pt_regs *regs, void *_state)
 	unmask_evtchn(port);
 	if (state->cntr == -1)
 		return;
-	if (smp_processor_id() != 0)
-		printk("cpu0_handler running on vcpu %d\n", smp_processor_id());
-	notify_remote_via_evtchn(cpu1_port);
+	if (state->cntr == INITIAL_DISCARD) {
+#if RUN_FOREVER
+		state->last_report_time =
+#endif
+		state->start = NOW();
+	}
+	if (RUN_FOREVER || state->cntr < NR_ITERATIONS + INITIAL_DISCARD)
+		notify_remote_via_evtchn(cpu1_port);
+	else
+		state->finished = 1;
 	state->cntr++;
+#if RUN_FOREVER
 	if (state->cntr == state->last_report_cntr + NR_ITERATIONS) {
 		unsigned long now_time = NOW();
 		printk("Took %ld nanoseconds for %d iterations (%ld each); total %ld for %d (%ld) (cpu 1 did %ld)\n",
@@ -145,6 +158,7 @@ cpu0_handler(evtchn_port_t port, struct pt_regs *regs, void *_state)
 		state->last_report_cntr = state->cntr;
 		state->last_report_time = now_time;
 	}
+#endif
 }
 
 void boot_vcpu(int id, void (*callback)(void), start_info_t *si);
@@ -166,14 +180,15 @@ start_vcpu1(void)
 static void
 run_intradomain(start_info_t *si)
 {
-	struct cpu0_state state = {};
+	volatile struct cpu0_state state = {};
 	int r;
+	unsigned long end;
 
 	cpu1_cntr = -1;
 	state.cntr = -1;
 	cpu1_port = -1;
 
-	cpu0_port = bind_ipi(0, cpu0_handler, &state);
+	cpu0_port = bind_ipi(0, cpu0_handler, (void *)&state);
 	if (cpu0_port == -1) {
 		printk("failed to set up IPI ports\n");
 		return;
@@ -187,20 +202,20 @@ run_intradomain(start_info_t *si)
 	printk("vcpu 1 launched\n");
 	msleep(900);
 
-	state.last_report_time = state.start = NOW();
 	state.cntr = 0;
 	r = notify_remote_via_evtchn(cpu1_port);
 	if (r != 0)
 		printk("failed to wake cpu1 (%d)!\n", r);
 
-	while (1)
+	while (!state.finished)
 		;
 
-/*
 	end = NOW();
-	printk("All done; took %ld nanoseconds for %d(%d) iterations\n", end - start, NR_ITERATIONS, cntr);
-	xenbus_printf(XBT_NIL, "results", "res", "%ld", end - start);
-*/
+	printk("All done; took %ld nanoseconds for %d iterations (%d on other cpu)\n",
+	       end - state.start,
+	       state.cntr - INITIAL_DISCARD,
+	       cpu1_cntr);
+	xenbus_printf(XBT_NIL, "results", "res", "%ld", end - state.start);
 }
 
 static void
