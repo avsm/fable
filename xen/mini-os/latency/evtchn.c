@@ -211,10 +211,11 @@ run_intradomain(start_info_t *si)
 		;
 
 	end = NOW();
-	printk("All done; took %ld nanoseconds for %d iterations (%d on other cpu)\n",
+	printk("All done; took %ld nanoseconds for %d iterations, %ldns RTT (%d iterations on other cpu)\n",
 	       end - state.start,
 	       state.cntr - INITIAL_DISCARD,
-	       cpu1_cntr);
+	       (end - state.start) / (state.cntr - INITIAL_DISCARD),
+	       cpu1_cntr - INITIAL_DISCARD);
 	xenbus_printf(XBT_NIL, "results", "res", "%ld", end - state.start);
 }
 
