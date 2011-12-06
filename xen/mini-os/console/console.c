@@ -118,7 +118,17 @@ void console_print(struct consfront_dev *dev, char *data, int length)
 void print(int direct, const char *fmt, va_list args)
 {
     static char   buf[1024];
-    
+    static unsigned long lock = 9999;
+    static int lock_depth;
+    unsigned long t;
+
+    while (1) {
+	t = synch_cmpxchg(&lock, 9999, smp_processor_id());
+	if (t == 9999 || t == smp_processor_id())
+	    break;
+    }
+    lock_depth++;
+
     (void)vsnprintf(buf, sizeof(buf), fmt, args);
  
     if(direct)
@@ -133,6 +143,10 @@ void print(int direct, const char *fmt, va_list args)
         
         console_print(NULL, buf, strlen(buf));
     }
+
+    lock_depth--;
+    if (lock_depth == 0)
+	lock = 9999;
 }
 
 void printk(const char *fmt, ...)

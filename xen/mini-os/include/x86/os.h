@@ -13,10 +13,16 @@
 #define unlikely(x)  __builtin_expect((x),0)
 #define likely(x)  __builtin_expect((x),1)
 
-#define smp_processor_id() 0
-
-
 #ifndef __ASSEMBLY__
+static inline int smp_processor_id(void)
+{
+    int res;
+    asm ("movl %%gs:16, %0\n"
+	 : "=r" (res)
+	);
+    return res;
+}
+
 #include <mini-os/types.h>
 #include <mini-os/hypervisor.h>
 #include <mini-os/kernel.h>
