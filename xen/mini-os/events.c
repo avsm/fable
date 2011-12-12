@@ -21,6 +21,7 @@
 #include <mini-os/hypervisor.h>
 #include <mini-os/events.h>
 #include <mini-os/lib.h>
+#include <xen/vcpu.h>
 
 #define NR_EVS 1024
 
@@ -181,14 +182,29 @@ evtchn_port_t bind_pirq(uint32_t pirq, int will_share,
 }
 
 #if defined(__x86_64__)
-char irqstack[2 * STACK_SIZE];
+static char irqstack0[2 * STACK_SIZE];
+static char irqstack1[2 * STACK_SIZE];
 
 static struct pda
 {
     int irqcount;       /* offset 0 (used in x86_64.S) */
     char *irqstackptr;  /*        8 */
-} cpu0_pda;
+    unsigned long id;             /* 16 */
+    unsigned long evtchn_mask[8]; /* 24 */
+} cpu0_pda, cpu1_pda;
 #endif
+
+void bind_evtchn_to_vcpu0(int idx)
+{
+    cpu1_pda.evtchn_mask[idx / 64] &= ~(1ul << (idx % 64));
+    cpu0_pda.evtchn_mask[idx / 64] |= 1ul << (idx % 64);
+}
+
+void bind_evtchn_to_vcpu1(int idx)
+{
+    cpu0_pda.evtchn_mask[idx / 64] &= ~(1ul << (idx % 64));
+    cpu1_pda.evtchn_mask[idx / 64] |= 1ul << (idx % 64);
+}
 
 /*
  * Initially all events are without a handler and disabled
@@ -200,12 +216,18 @@ void init_events(void)
     asm volatile("movl %0,%%fs ; movl %0,%%gs" :: "r" (0));
     wrmsrl(0xc0000101, &cpu0_pda); /* 0xc0000101 is MSR_GS_BASE */
     cpu0_pda.irqcount = -1;
-    cpu0_pda.irqstackptr = (void*) (((unsigned long)irqstack + 2 * STACK_SIZE)
+    cpu0_pda.irqstackptr = (void*) (((unsigned long)irqstack0 + 2 * STACK_SIZE)
                                     & ~(STACK_SIZE - 1));
+    cpu1_pda.irqcount = -1;
+    cpu1_pda.irqstackptr = (void*) (((unsigned long)irqstack1 + 2 * STACK_SIZE)
+                                    & ~(STACK_SIZE - 1));
+    cpu1_pda.id = 1;
+    cpu0_pda.evtchn_mask[0] = 0xfffffffffffffffful;
+    cpu1_pda.evtchn_mask[0] = 0xfffffffffffffffful;
 #endif
     /* initialize event handler */
     for ( i = 0; i < NR_EVS; i++ )
-	{
+    {
         ev_actions[i].handler = default_handler;
         mask_evtchn(i);
     }
@@ -271,6 +293,67 @@ int evtchn_bind_interdomain(domid_t pal, evtchn_port_t remote_port,
     port = op.local_port;
     *local_port = bind_evtchn(port, handler, data);
     return rc;
+}
+
+static unsigned char new_vcpu_stack[8192];
+static void __start_new_vcpu(unsigned long arg, void (*f)(void))
+{
+    shared_info_t *s = HYPERVISOR_shared_info;
+    vcpu_info_t   *vcpu_info;
+    printk("I am a new vcpu %ld\n", arg);
+    vcpu_info = &s->vcpu_info[arg];
+    printk("pending %x, pending sel %lx, mask %x\n",
+	   vcpu_info->evtchn_upcall_pending,
+	   vcpu_info->evtchn_pending_sel,
+	   vcpu_info->evtchn_upcall_mask);
+    vcpu_info->evtchn_upcall_mask = 0;
+    f();
+    printk("VCPU terminated unexpectedly?\n");
+    for (;;)
+	;
+}
+
+extern struct trap_info trap_table[];
+void hypervisor_callback(void);
+void failsafe_callback(void);
+
+void boot_vcpu(int id, void (*callback)(void), start_info_t *si)
+{
+    struct vcpu_guest_context initial_state = {};
+    struct cpu_user_regs *regs = &initial_state.user_regs;
+    struct trap_info *traps = &initial_state.trap_ctxt[0];
+    int r;
+
+    initial_state.flags = VGCF_in_kernel;
+    initial_state.gs_base_kernel = (unsigned long)&cpu1_pda;
+
+    regs->rip = (unsigned long)__start_new_vcpu;
+    regs->rsp = (unsigned long)new_vcpu_stack + sizeof(new_vcpu_stack);
+    regs->rdi = id;
+    regs->rsi = (unsigned long)callback;
+    regs->cs = FLAT_KERNEL_CS;
+    regs->ss = FLAT_KERNEL_SS;
+    regs->es = FLAT_KERNEL_DS;
+    regs->ds = FLAT_KERNEL_DS;
+    regs->fs = FLAT_KERNEL_DS;
+    regs->gs = FLAT_KERNEL_DS;
+
+    initial_state.kernel_ss = FLAT_KERNEL_DS;
+    initial_state.ctrlreg[3] = virt_to_mach(si->pt_base);
+    memcpy(traps, trap_table, sizeof(trap_table[0]) * 17);
+    initial_state.event_callback_eip = (unsigned long)hypervisor_callback;
+    initial_state.failsafe_callback_eip = (unsigned long)failsafe_callback;
+
+    r = HYPERVISOR_vcpu_op(VCPUOP_initialise, id, &initial_state);
+    if (r != 0) {
+	printk("cannot initialise vcpu 1\n");
+	return;
+    }
+    r = HYPERVISOR_vcpu_op(VCPUOP_up, id, NULL);
+    if (r != 0) {
+	printk("cannot up vcpu 1\n");
+	return;
+    }
 }
 
 /*
