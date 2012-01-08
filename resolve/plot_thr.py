@@ -1,7 +1,9 @@
 import sys, os
 
+import matplotlib as mpl
 import numpy as np
 import matplotlib.pyplot as plt
+import pylab as pyl
 
 def get_data(filename, is_series):
   dst_core_colid = 1
@@ -40,7 +42,7 @@ def get_data(filename, is_series):
 
 def get_series(data, dst_core, safe=1):
   values = [v[0] for c, v in data[dst_core][safe].items()]
-#  print str(dst_core) + ": " + str(values)
+  print str(dst_core) + ": " + str(values)
   return values
 
 def get_stddev_series(data, dst_core, safe=1):
@@ -60,10 +62,11 @@ def autolabel(rects):
 # - in particular, for different machines, modify cores
 #   (tigger's config is [0, 1, 6, 12, 18])
 
-cores = [0, 1, 6, 12, 18]  # the core IDs benchmarked (first ID of pair is always 0)
+cores = [0, 1, 6, 18]  # the core IDs benchmarked (first ID of pair is always 0)
 #cores = [0, 1, 2]
 n_groups = 3  # three chunk sizes
 n_bars = 11   # number of bars (tests) per group
+labels = ['(a)', '(b)', '(c)', '(d)', '(e)']
 
 # ---------------------------
 # Handle command line args
@@ -130,6 +133,10 @@ unix_data = get_data(unix_filename, is_series)
 tcp_nd_data = get_data(tcp_nd_filename, is_series)
 tcp_data = get_data(tcp_filename, is_series)
 
+fig_idx = 1
+fig = plt.figure(figsize=(4.5,4.5))
+pyl.rc('font', size='8.0')
+
 for dst_core in cores:
   # get data series
   if dst_core != 0:
@@ -188,46 +195,52 @@ for dst_core in cores:
   ind = np.arange(n_groups)  # the x locations for the groups
   width = 0.8 / n_bars       # the width of the bars
 
-  fig = plt.figure(figsize=(10,6))
-  ax = fig.add_subplot(111)
+  subplot_id = str(len(cores) / 2) + str(2) + str(fig_idx)
+  print subplot_id
+  ax = fig.add_subplot(subplot_id)
 
   rects1 = ax.bar(ind, mempipe_spin_unsafe_series, width, color='r',
-                  hatch='--', yerr=mempipe_spin_unsafe_stddev_series,
-                  ecolor='k')
+                  hatch='///', yerr=mempipe_spin_unsafe_stddev_series,
+                  ecolor='k', label='mempipe-spin-unsafe', lw=0.5)
   rects2 = ax.bar(ind+width, mempipe_spin_safe_series, width, color='r',
-                  yerr=mempipe_spin_safe_stddev_series, ecolor='k')
+                  yerr=mempipe_spin_safe_stddev_series, ecolor='k',
+                  label='mempipe-spin-safe', lw=0.5)
   rects3 = ax.bar(ind+2*width, mempipe_futex_unsafe_series, width, color='g',
-                  hatch='--', yerr=mempipe_futex_unsafe_stddev_series,
-                  ecolor='k')
+                  hatch='///', yerr=mempipe_futex_unsafe_stddev_series,
+                  ecolor='k', label='mempipe-futex-unsafe', lw=0.5)
   rects4 = ax.bar(ind+3*width, mempipe_futex_safe_series, width, color='g',
-                  yerr=mempipe_futex_safe_stddev_series, ecolor='k')
+                  yerr=mempipe_futex_safe_stddev_series, ecolor='k',
+                  label='mempipe-futex-safe', lw=0.5)
   rects5 = ax.bar(ind+4*width, shmpipe_unsafe_series, width, color='b',
-                  hatch='--', yerr=shmpipe_unsafe_stddev_series, ecolor='k')
+                  hatch='///', yerr=shmpipe_unsafe_stddev_series, ecolor='k',
+                  label='shmempipe-unsafe', lw=0.5)
   rects6 = ax.bar(ind+5*width, shmpipe_safe_series, width, color='b',
-                  yerr=shmpipe_safe_stddev_series, ecolor='k')
+                  yerr=shmpipe_safe_stddev_series, ecolor='k',
+                  label='shmempipe-safe', lw=0.5)
   rects7 = ax.bar(ind+6*width, vmsplice_series, width, color='m',
-                  yerr=vmsplice_stddev_series, ecolor='k')
+                  yerr=vmsplice_stddev_series, ecolor='k',
+                  label='vmsplice-coop', lw=0.5)
   rects8 = ax.bar(ind+7*width, pipe_series, width, color='y',
-                  yerr=pipe_stddev_series, ecolor='k')
+                  yerr=pipe_stddev_series, ecolor='k', label='pipe', lw=0.5)
   rects9 = ax.bar(ind+8*width, unix_series, width, color='k',
-                  yerr=unix_stddev_series, ecolor='0.4')
+                  yerr=unix_stddev_series, ecolor='0.4', label='unix-sock', lw=0.5)
   rects10 = ax.bar(ind+9*width, tcp_nd_series, width, color='w',
-                   yerr=tcp_nd_stddev_series, ecolor='k')
+                   yerr=tcp_nd_stddev_series, ecolor='k', label='tcp-nodelay', lw=0.5)
   rects11 = ax.bar(ind+10*width, tcp_series, width, color='c',
-                   yerr=tcp_stddev_series, ecolor='k')
+                   yerr=tcp_stddev_series, ecolor='k', label='tcp', lw=0.5)
 
-  # add some
-  ax.set_ylabel('Throughput [Mbps]')
-  ax.set_title('Core 0 to ' + str(dst_core))
+  # add the subplot label
+  plt.text(0.33, 20000, labels[fig_idx - 1])
+
+  # add some ticks
   ax.set_xticks(ind+(n_bars / 2 * width))
   ax.set_xticklabels( ('64', '4096', '65535') )
+  ax.set_ylabel('Throughput [Mbps]')
+
+  # set frame width to 0.5 for subplot
+  [i.set_linewidth(0.5) for i in ax.spines.itervalues()]
 
   plt.ylim(0, 25000)
-  ax.legend( (rects1[0], rects2[0], rects3[0], rects4[0], rects5[0], rects6[0],
-              rects7[0], rects8[0], rects9[0], rects10[0], rects11[0]),
-             ('mempipe_spin_unsafe', 'mempipe_spin_safe', 'mempipe_futex_unsafe',
-              'mempipe_futex_safe', 'shmempipe_unsafe', 'shmempipe_safe',
-              'vmsplice_coop', 'pipe', 'unix', 'tcp', 'tcp_nodelay'), loc=2 )
 
   if not is_series:
     autolabel(rects1)
@@ -242,9 +255,33 @@ for dst_core in cores:
     autolabel(rects10)
     autolabel(rects11)
 
-  leg = plt.gca().get_legend()
-  ltext = leg.get_texts()
-  plt.setp(ltext, fontsize='small')    # the legend text fontsize
+  if fig_idx == 1:
+    ax.set_ylabel('Throughput [Mbps]')
+    plt.legend(bbox_to_anchor=(-0.3, 1.04, 2.5, .102), loc=3,
+               ncol=3, mode="expand", borderaxespad=0.)
+#    ax.legend( (rects1[0], rects2[0], rects3[0], rects4[0], rects5[0], rects6[0],
+#                rects7[0], rects8[0], rects9[0], rects10[0], rects11[0]),
+#               ('mempipe_spin_unsafe', 'mempipe_spin_safe', 'mempipe_futex_unsafe',
+#                'mempipe_futex_safe', 'shmempipe_unsafe', 'shmempipe_safe',
+#                'vmsplice_coop', 'pipe', 'unix', 'tcp', 'tcp_nodelay'), loc=2 )
+    leg = plt.gca().get_legend()
+    ltext = leg.get_texts()
+    lframe = leg.get_frame()
+    lframe.set_linewidth(0)
+    plt.setp(ltext, fontsize='medium')    # the legend text fontsize
+  elif fig_idx % 2 == 1:
+    pass
+  else:
+    ax.set_ylabel('')
+    ax.set_label('')
+    ax.set_yticks([], [])
 
-  plt.savefig("core_0_to_" + str(dst_core) + ".pdf", format="pdf")
-  plt.savefig("core_0_to_" + str(dst_core) + ".png", format="png")
+  fig_idx = fig_idx + 1
+
+#plt.savefig("core_0_to_" + str(dst_core) + ".pdf", format="pdf")
+#plt.savefig("core_0_to_" + str(dst_core) + ".png", format="png")
+#mpl.rcParams['patch.linewidth'] = 0.5
+plt.subplots_adjust(left=0.15, right=1.0, top=0.8, bottom=0.05)
+plt.savefig("test.pdf", format="pdf")
+
+
