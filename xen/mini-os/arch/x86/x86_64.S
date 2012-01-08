@@ -129,19 +129,24 @@ error_call_handler:
 	jmp error_entry
 .endm
 
-#define XEN_GET_VCPU_INFO(reg)	movq HYPERVISOR_shared_info,reg
+#define XEN_GET_VCPU_INFO(reg,reg2)	\
+	movq HYPERVISOR_shared_info,reg ;\
+	movq %gs:16, reg2		;\
+	shl $5, reg2			;\
+	addq reg2, reg
+	
 #define XEN_PUT_VCPU_INFO(reg)
 #define XEN_PUT_VCPU_INFO_fixup
 #define XEN_LOCKED_BLOCK_EVENTS(reg)	movb $1,evtchn_upcall_mask(reg)
 #define XEN_LOCKED_UNBLOCK_EVENTS(reg)	movb $0,evtchn_upcall_mask(reg)
 #define XEN_TEST_PENDING(reg)	testb $0xFF,evtchn_upcall_pending(reg)
 
-#define XEN_BLOCK_EVENTS(reg)	XEN_GET_VCPU_INFO(reg)			; \
+#define XEN_BLOCK_EVENTS(reg, reg2)	XEN_GET_VCPU_INFO(reg, reg2)	; \
                     			XEN_LOCKED_BLOCK_EVENTS(reg)	; \
     				            XEN_PUT_VCPU_INFO(reg)
 
-#define XEN_UNBLOCK_EVENTS(reg)	XEN_GET_VCPU_INFO(reg)			; \
-                				XEN_LOCKED_UNBLOCK_EVENTS(reg)	; \
+#define XEN_UNBLOCK_EVENTS(reg, reg2)	XEN_GET_VCPU_INFO(reg, reg2)		; \
+               				XEN_LOCKED_UNBLOCK_EVENTS(reg)	; \
     			            	XEN_PUT_VCPU_INFO(reg)
 
 
@@ -161,7 +166,7 @@ ENTRY(hypervisor_callback2)
         jmp error_exit
 
 restore_all_enable_events:  
-	XEN_UNBLOCK_EVENTS(%rsi)        # %rsi is already set up...
+	XEN_UNBLOCK_EVENTS(%rsi, %rax)        # %rsi is already set up...
 
 scrit:	/**** START OF CRITICAL REGION ****/
 	XEN_TEST_PENDING(%rsi)
@@ -188,7 +193,7 @@ retint_kernel:
 retint_restore_args:
 	movl EFLAGS-6*8(%rsp), %eax
 	shr $9, %eax			# EAX[0] == IRET_EFLAGS.IF
-	XEN_GET_VCPU_INFO(%rsi)
+	XEN_GET_VCPU_INFO(%rsi, %rcx)
 	andb evtchn_upcall_mask(%rsi),%al
 	andb $1,%al			# EAX[0] == IRET_EFLAGS.IF & event_mask
 	jnz restore_all_enable_events	#        != 0 => enable event delivery
@@ -206,7 +211,7 @@ error_exit:
 	movq 4*8(%rsp),%rbp
 	movq 5*8(%rsp),%rbx
 	addq $6*8,%rsp
-	XEN_BLOCK_EVENTS(%rsi)		
+	XEN_BLOCK_EVENTS(%rsi, %rax)		
 	jmp retint_kernel
 
 

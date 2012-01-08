@@ -250,7 +250,7 @@ setaffinity(int cpunum)
   cpu_set_t *mask;
   size_t size;
   int i;
-  int nrcpus = 48;
+  int nrcpus = 160;
   pid_t pid;
   mask = CPU_ALLOC(nrcpus);
   size = CPU_ALLOC_SIZE(nrcpus);

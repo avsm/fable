@@ -81,10 +81,6 @@ void schedule(void)
     prev = current;
     local_irq_save(flags); 
 
-    if (in_callback) {
-        printk("Must not call schedule() from a callback\n");
-        BUG();
-    }
     if (flags) {
         printk("Must not call schedule() with IRQs disabled\n");
         BUG();
