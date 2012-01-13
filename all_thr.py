@@ -50,12 +50,23 @@ test_rips = [("pipe_thr", True), ("unix_thr", True),
              ("mempipe_spin_thr", True), ("mempipe_spin_thr", False), 
              ("shmem_pipe_thr", True), ("shmem_pipe_thr", False)]
 
+tests_done = set()
+
 for test, rip in test_rips:
     for chunksize, repeats in chunk_repeats:
         for (tcore, tnode) in target_cores:
             
             if test == "mempipe_spin_thr" and tcore == "0":
                 continue
+
+            if test not in ("mempipe_thr", "mempipe_spin_thr", "shmem_pipe_thr"):
+                tnode = "-1" # The other tests don't care about NUMA nodes.
+
+            # This is to skip would-be repeats for the above mentioned tests that don't care about NUMA.
+            if (test, rip, chunksize, repeats, tcore, tnode) in tests_done:
+                continue
+
+            tests_done.add((test, rip, chunksize, repeats, tcore, tnode))
 
             progname = "./%s" % test
             args = [progname, "-t", "-s", chunksize, "-c", repeats, "-a", "0", "-b", tcore, "-o", output_dir, "-w", "-v", "-m", "2", "-n", tnode]

@@ -58,6 +58,7 @@ with open(os.path.join(logdir, "dmesg_virt"), "w") as f:
 n_cpus = 0
 cpu_sockets = dict()
 cpu_ht_partners = dict()
+cpu0_shared_caches = dict() # Maps each CPU number to the lowest level of cache it shares with 0.
 
 cpu_dirs = None
 try:
@@ -79,7 +80,8 @@ if cpu_dirs is not None:
 			os.mkdir(cache_dest_dir)
 			cache_source_dir = os.path.join("/sys/devices/system/cpu", d, "cache")
 			for cache_d in os.listdir(cache_source_dir):
-				if index_regex.match(cache_d) is not None:
+				index_match = index_regex.match(cache_d)
+				if index_match is not None:
 					index_source_dir = os.path.join(cache_source_dir, cache_d)
 					index_dest_dir = os.path.join(cache_dest_dir, cache_d)
 					os.mkdir(index_dest_dir)
@@ -89,6 +91,14 @@ if cpu_dirs is not None:
 									os.path.join(index_dest_dir, f))
 						except:
 							print >>stderr, "Couldn't copy", os.path.join(index_source_dir, f)
+					if this_cpu_id == 0:
+						with open(os.path.join(index_source_dir, "shared_cpu_list"), "r") as f:
+							this_sharing_cpus = parse_list(f.read())
+						with open(os.path.join(index_source_dir, "level"), "r") as f:
+							this_level = int(f.read())
+						for cpu in this_sharing_cpus:
+							if cpu not in cpu0_shared_caches or cpu0_shared_caches[cpu] > this_level:
+								cpu0_shared_caches[cpu] = this_level	
 			topology_dir = os.path.join(dest_dir, "topology")
 			topology_from_dir = os.path.join("/sys/devices/system/cpu", d, "topology")
 			os.mkdir(topology_dir)
@@ -133,6 +143,10 @@ if node_dirs is not None:
 				for cpu in node_cpus:
 					cpu_nodes[cpu] = this_node
 
+for n in range(n_cpus):
+	if n not in cpu0_shared_caches:
+		cpu0_shared_caches[n] = "memory"
+
 if n_cpus == 0:
 	print "Don't know how many CPUs we have, assuming 1"
 	n_cpus = 1
@@ -145,8 +159,8 @@ if n_nodes == 0:
 	cpu_nodes[0] = 0
 
 # If there are few CPUs, test all combinations.
-# If not, target the CPU's HT sibling if it exists, one other on its NUMA node, 
-# and one from each other NUMA node.
+# If not, target the CPU's HT sibling if it exists.
+# Then target a sample of each unique (numa-node, physical-socket, lowest-shared-cache-level) triple.
 
 target_cpus = []
 
@@ -159,17 +173,17 @@ else:
 	partners = cpu_ht_partners[0]
 	if len(partners) > 1:
 		target_cpus.append(partners[1])
-	origin_loc = (cpu_sockets[0], cpu_nodes[0])
-	# Find an example for each unique (socket, numa node) available.
+	origin_loc = (cpu_sockets[0], cpu_nodes[0], 1)
+	# Find an example for each unique (socket, numa node, shared cache) available.
 	taken_locs = set()
 	for i in range(1, n_cpus):
-		this_loc = (cpu_sockets[i], cpu_nodes[i])
+		this_loc = (cpu_sockets[i], cpu_nodes[i], cpu0_shared_caches[i])
 		if this_loc in taken_locs:
 			continue
 		elif this_loc == origin_loc and i in target_cpus:
 			continue
 		else:
-			taken_locs.insert(this_loc)
+			taken_locs.add(this_loc)
 			target_cpus.append(i)
 
 target_cpus_nodes = []
