@@ -69,7 +69,7 @@ for test, rip in test_rips:
             tests_done.add((test, rip, chunksize, repeats, tcore, tnode))
 
             progname = "./%s" % test
-            args = [progname, "-t", "-s", chunksize, "-c", repeats, "-a", "0", "-b", tcore, "-o", output_dir, "-w", "-v", "-m", "2", "-n", tnode]
+            args = [progname, "-s", chunksize, "-c", repeats, "-a", "0", "-b", tcore, "-o", output_dir, "-w", "-v", "-m", "2", "-n", tnode]
             # Last four args: write in place, do verify, produce using rep stosq
             if rip:
                 args.append("-r")

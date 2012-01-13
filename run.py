@@ -53,7 +53,7 @@ shutil.copyfile("/proc/cpuinfo", os.path.join(logdir, "cpuinfo"))
 shutil.copyfile("/proc/meminfo", os.path.join(logdir, "meminfo"))
 
 with open(os.path.join(logdir, "dmesg_virt"), "w") as f:
-	subprocess.check_call(["bash", "-c", "dmesg | grep -i virtual"], stdout=f)
+	subprocess.call(["bash", "-c", "dmesg | grep -i virtual"], stdout=f)
 
 n_cpus = 0
 cpu_sockets = dict()
