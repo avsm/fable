@@ -162,6 +162,11 @@ if n_nodes == 0:
 # If not, target the CPU's HT sibling if it exists.
 # Then target a sample of each unique (numa-node, physical-socket, lowest-shared-cache-level) triple.
 
+print "Detected system topology:"
+
+for i in range(n_cpus):
+	print "CPU %d: socket %d, node %d, best CPU0 shared cache level: %s" % (i, cpu_sockets[i], cpu_nodes[i], cpu0_shared_caches[i])
+
 target_cpus = []
 
 if n_cpus <= 4:
@@ -185,6 +190,8 @@ else:
 		else:
 			taken_locs.add(this_loc)
 			target_cpus.append(i)
+
+print "Testing using target CPUs:", target_cpus
 
 target_cpus_nodes = []
 zero_node = cpu_nodes[0]
