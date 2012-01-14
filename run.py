@@ -156,7 +156,8 @@ if n_cpus == 0:
 if n_nodes == 0:
 	print "Don't know how many NUMA nodes we have, assuming 1 (UMA)"
 	n_nodes = 1
-	cpu_nodes[0] = 0
+	for x in range(n_cpus):
+		cpu_nodes[x] = 0
 
 # If there are few CPUs, test all combinations.
 # If not, target the CPU's HT sibling if it exists.
