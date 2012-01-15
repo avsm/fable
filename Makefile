@@ -1,5 +1,5 @@
 CFLAGS = -g -Wall -O3 -D_GNU_SOURCE -DNDEBUG -std=gnu99
-LDFLAGS+=-lm
+LDLIBS+=-lm
 
 .PHONY: all clean run
 
@@ -12,10 +12,10 @@ TARGETS+=summarise_tsc_counters
 all: $(TARGETS)
 
 %_lat: atomicio.o test.o xutil.o %_lat.o
-	$(CC) -lrt -lnuma $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lrt -lnuma
 
 %_thr: atomicio.o test.o xutil.o %_thr.o
-	$(CC) -lrt -lnuma $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lrt -lnuma
 
 tcp_nodelay_thr.o: tcp_thr.c
 	$(CC) $(CFLAGS) $^ -c -DUSE_NODELAY -o $@
