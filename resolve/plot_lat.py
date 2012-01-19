@@ -2,6 +2,9 @@ import sys, os
 
 import numpy as np
 import numpy.random
+import matplotlib
+matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import pylab
@@ -28,7 +31,7 @@ def get_data(filename):
 # Handle command line args
 
 if len(sys.argv) < 2:
-  print "usage: python plot_lat.py <input file> <title> [fix-scale]"
+  print "usage: python plot_lat.py <input file> <title> [fix-scale] [colourmap]"
   sys.exit(0)
 
 input_file = sys.argv[1]
@@ -36,6 +39,11 @@ input_file = sys.argv[1]
 fix_scale = 0
 if len(sys.argv) > 3:
   fix_scale = int(sys.argv[3])
+
+if len(sys.argv) > 4:
+  colourmap = sys.argv[4]
+else:
+  colourmap = "Greys"
 
 raw_data = np.loadtxt(input_file)
 data = get_data(input_file)
@@ -53,9 +61,9 @@ fig = plt.figure(figsize=(4,3))
 #plt.imshow(heatmap, extent=extent)
 
 if fix_scale != 0:
-  plt.matshow(raw_data, vmax=0.0001, vmin=0.00001, fignum=0)
+  plt.matshow(raw_data, vmax=0.000006, vmin=0.000001, fignum=0, cmap=colourmap)
 else:
-  plt.matshow(raw_data, fignum=0)
+  plt.matshow(raw_data, fignum=0, cmap=colourmap)
 
 # add some
 plt.ylabel('Core ID')

@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pylab as pyl
 
-def get_data(filename, is_series):
+def get_data(filename, is_series, plot_chunksizes):
   dst_core_colid = 1
   chunksize_colid = 3
   safe_colid = 6
@@ -29,6 +29,9 @@ def get_data(filename, is_series):
 #                                                data[i][chunksize_colid])
     dst_core = data[i][dst_core_colid]
     chunksize = data[i][chunksize_colid]
+    # Skip chunk sizes that we have data for, but do not want to plot
+    if chunksize not in plot_chunksizes:
+      continue
     safe = data[i][safe_colid]
     throughput = data[i][throughput_colid]
     if is_series:
@@ -64,9 +67,11 @@ def autolabel(rects):
 
 cores = [0, 1, 6, 18]  # the core IDs benchmarked (first ID of pair is always 0)
 #cores = [0, 1, 2]
-n_groups = 3  # three chunk sizes
+chunksizes = [64, 4096, 65536]
 n_bars = 11   # number of bars (tests) per group
 labels = ['(a)', '(b)', '(c)', '(d)', '(e)']
+
+n_groups = len(chunksizes)  # number of chunk sizes
 
 # ---------------------------
 # Handle command line args
@@ -124,14 +129,14 @@ else:
 
 # --------------------------
 
-mempipe_spin_data = get_data(mempipe_spin_filename, is_series)
-mempipe_futex_data = get_data(mempipe_futex_filename, is_series)
-shmpipe_data = get_data(shmem_pipe_filename, is_series)
-vmsplice_data = get_data(vmsplice_filename, is_series)
-pipe_data = get_data(pipe_filename, is_series)
-unix_data = get_data(unix_filename, is_series)
-tcp_nd_data = get_data(tcp_nd_filename, is_series)
-tcp_data = get_data(tcp_filename, is_series)
+mempipe_spin_data = get_data(mempipe_spin_filename, is_series, chunksizes)
+mempipe_futex_data = get_data(mempipe_futex_filename, is_series, chunksizes)
+shmpipe_data = get_data(shmem_pipe_filename, is_series, chunksizes)
+vmsplice_data = get_data(vmsplice_filename, is_series, chunksizes)
+pipe_data = get_data(pipe_filename, is_series, chunksizes)
+unix_data = get_data(unix_filename, is_series, chunksizes)
+tcp_nd_data = get_data(tcp_nd_filename, is_series, chunksizes)
+tcp_data = get_data(tcp_filename, is_series, chunksizes)
 
 fig_idx = 1
 fig = plt.figure(figsize=(4.5,4.5))
@@ -145,8 +150,8 @@ for dst_core in cores:
   else:
     # if we have dst_core set to 0 (i.e. we're communicating with ourselves), we skip
     # the spin test, so we set the values to zero here (they are not in the result files)
-    mempipe_spin_unsafe_series = [0, 0, 0]
-    mempipe_spin_safe_series = [0, 0, 0]
+    mempipe_spin_unsafe_series = [0] * n_groups
+    mempipe_spin_safe_series = [0] * n_groups
   mempipe_futex_unsafe_series = get_series(mempipe_futex_data, dst_core, safe=0)
   mempipe_futex_safe_series = get_series(mempipe_futex_data, dst_core, safe=1)
   shmpipe_unsafe_series = get_series(shmpipe_data, dst_core, safe=1)
@@ -164,8 +169,8 @@ for dst_core in cores:
       mempipe_spin_safe_stddev_series = get_stddev_series(mempipe_spin_data,
                                                           dst_core, safe=1)
     else:
-      mempipe_spin_unsafe_stddev_series = [0, 0, 0]
-      mempipe_spin_safe_stddev_series = [0, 0, 0]
+      mempipe_spin_unsafe_stddev_series = [0] * n_groups
+      mempipe_spin_safe_stddev_series = [0] * n_groups
     mempipe_futex_unsafe_stddev_series = get_stddev_series(mempipe_futex_data,
                                                            dst_core, safe=0)
     mempipe_futex_safe_stddev_series = get_stddev_series(mempipe_futex_data,
@@ -234,7 +239,7 @@ for dst_core in cores:
 
   # add some ticks
   ax.set_xticks(ind+(n_bars / 2 * width))
-  ax.set_xticklabels( ('64', '4096', '65535') )
+  ax.set_xticklabels( [ str(c) for c in chunksizes] )
   ax.set_ylabel('Throughput [Mbps]')
 
   # set frame width to 0.5 for subplot
@@ -283,5 +288,3 @@ for dst_core in cores:
 #mpl.rcParams['patch.linewidth'] = 0.5
 plt.subplots_adjust(left=0.15, right=1.0, top=0.8, bottom=0.05)
 plt.savefig("test.pdf", format="pdf")
-
-
