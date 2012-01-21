@@ -2,10 +2,13 @@ import sys, os
 
 import numpy as np
 import numpy.random
+import matplotlib
+matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
-def get_data(filename):
+def get_data_raw(filename):
   x, y, v = np.loadtxt(filename, usecols=(0,1,2), unpack=True)
 
   x_tmp = []
@@ -31,6 +34,9 @@ def get_data(filename):
   print j
   return retdata
 
+def get_data(filename):
+  data = np.loadtxt(filename)
+  return [data]
 
 # ---------------------------
 # Handle command line args
@@ -47,14 +53,15 @@ datasets = get_data(input_file)
 
 i = 0
 fig = plt.figure(figsize=(4,3))
-for k, ds in datasets.items():
+for ds in datasets:
 #  print ds
 #  heatmap, xedges, yedges = np.histogram2d(ds[0], ds[1], bins=180, weights=ds[2])
 #  extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
 
   plt.clf()
-  print "plotting " + str(k)
-  plt.hexbin(ds[0], ds[1], C=ds[2], gridsize=max_core_id, linewidths=1, cmap=cm.jet, bins=None)
+#  print "plotting " + str(k)
+#  plt.hexbin(ds[0], ds[1], C=ds[2], gridsize=max_core_id, linewidths=1, cmap=cm.jet, bins=None)
+  plt.matshow(ds, fignum=0, vmin=1800, cmap="Greys")
 
 #  plt.clf()
 #  plt.imshow(heatmap, extent=extent)
