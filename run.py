@@ -194,6 +194,11 @@ else:
 
 print "Testing using target CPUs:", target_cpus
 
+# Write record of target CPUs to file for easier post-processing
+f = open(os.path.join(logdir, "target_cpus"), 'w+')
+f.write(",".join([str(x) for x in target_cpus]))
+f.close()
+
 target_cpus_nodes = []
 zero_node = cpu_nodes[0]
 
