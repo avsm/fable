@@ -24,7 +24,6 @@ for r in ${RESULTS}; do
   if [[ ! -d ${DIR} ]]; then
     echo "FATAL: After extraction, ${DIR} did not exist!"
   fi
-  mkdir -p ${DIR}/graphs
 
   # Find the target cores used
   TARGET_CPUS=$(cat ${DIR}/logs/target_cpus)
@@ -34,7 +33,11 @@ for r in ${RESULTS}; do
     ${TARGET_CPUS} ${NAME}
 
   # Generate details page
-#  python gen-details-page.py ${DIR} ${OUT_DIR} ${TARGET_CPUS} ${NAME}
+  mkdir -p ${OUT_DIR}/details
+  mkdir -p ${DIR}/graphs
+  cat ${PWD}/html_head.tmpl > ${OUT_DIR}/details/${NAME}.html
+  python gen-details-page.py ${DIR} ${OUT_DIR}/details ${TARGET_CPUS} ${NAME}
+  cat ${PWD}/html_foot.tmpl >> ${OUT_DIR}/details/${NAME}.html
 
   # Move graphs
   mkdir -p ${OUT_DIR}/graphs

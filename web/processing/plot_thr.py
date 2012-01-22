@@ -48,7 +48,7 @@ def get_data(filename, is_series, plot_chunksizes):
 
 def get_series(data, dst_core, safe=1):
   values = [v[0] for c, v in data[dst_core][safe].items()]
-  print str(dst_core) + ": " + str(values)
+#  print str(dst_core) + ": " + str(values)
   return values
 
 def get_stddev_series(data, dst_core, safe=1):
@@ -258,28 +258,17 @@ for dst_core in cores:
   # add some ticks
   ax.set_xticks(ind+(n_bars / 2 * width))
   ax.set_xticklabels( [ str(c) for c in chunksizes] )
-  ax.set_ylabel('Throughput [Mbps]')
+#  ax.set_ylabel('Throughput [Mbps]')
 
   # set frame width to 0.5 for subplot
   [i.set_linewidth(0.5) for i in ax.spines.itervalues()]
 
   plt.ylim(0, all_max)
 
-  if not is_series:
-    autolabel(rects1)
-    autolabel(rects2)
-    autolabel(rects3)
-    autolabel(rects4)
-    autolabel(rects5)
-    autolabel(rects6)
-    autolabel(rects7)
-    autolabel(rects8)
-    autolabel(rects9)
-    autolabel(rects10)
-    autolabel(rects11)
+  plt.title("Core 0 to core " + str(dst_core))
 
-  if fig_idx == 1:
-    ax.set_ylabel('Throughput [Mbps]')
+#  if fig_idx == 1:
+#    ax.set_ylabel('Throughput [Mbps]')
 #    plt.legend(bbox_to_anchor=(-0.3, 1.04, 2.5, .102), loc=3,
 #               ncol=3, mode="expand", borderaxespad=0.)
 #    ax.legend( (rects1[0], rects2[0], rects3[0], rects4[0], rects5[0], rects6[0],
@@ -301,8 +290,34 @@ for dst_core in cores:
 
   fig_idx = fig_idx + 1
 
-#  plt.savefig("core_0_to_" + str(dst_core) + ".pdf", format="pdf")
-  plt.savefig(output_dir + "/core_0_to_" + str(dst_core) + ".png", format="png")
+  # Small version
+  fig.set_size_inches(3,2)
+  plt.savefig(output_dir + "/core_0_to_" + str(dst_core) + "-small.png",
+              format="png")
+
+  # Large version
+  fig.set_size_inches(6,4)
+
+  ax.set_ylabel('Throughput [Mbps]')
+  ax.set_ylabel('Transfer size [bytes]')
+  if not is_series:
+    autolabel(rects1)
+    autolabel(rects2)
+    autolabel(rects3)
+    autolabel(rects4)
+    autolabel(rects5)
+    autolabel(rects6)
+    autolabel(rects7)
+    autolabel(rects8)
+    autolabel(rects9)
+    autolabel(rects10)
+    autolabel(rects11)
+
+#  plt.savefig(output_dir + "/core_0_to_" + str(dst_core) + ".pdf",
+#              format="pdf")
+  plt.savefig(output_dir + "/core_0_to_" + str(dst_core) + ".png",
+              format="png")
+
 #mpl.rcParams['patch.linewidth'] = 0.5
 #plt.subplots_adjust(left=0.15, right=1.0, top=0.8, bottom=0.05)
 #plt.savefig("test.pdf", format="pdf")

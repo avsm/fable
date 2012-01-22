@@ -59,11 +59,6 @@ for line in open(data_dir + "/logs/uname").readlines():
   arch = fields[2]
   os_string = "%s %s, %s" % (os, ver, arch)
 
-# Generate graphs
-argv = ["python", "plot_thr.py", results_dir, target_cpus, "0"]
-#argv.extend(str(target_cpus))
-subprocess.check_call(argv)
-
 # Generate HTML output
 html = "<tr><td>%s</td><td>%d</td><td>%s</td><td>%s</td><td>%s</td>" \
     "<td>%s</td><td>%s</td></tr>"
@@ -81,10 +76,8 @@ details_link = "<a href=\"details/%s.html\">View</a>" % name
 raw_data_link = "<a href=\"https://raw.github.com/%s/ipc-bench/master/" \
     "results/%s.tar.gz\">Download</a>" % (github_user, name)
 
-#out_html = html % (num_cores, "<br />".join(model_names), os_string,
 out_html = html % (model_names[0], num_cores, numa_string, os_string,
-                   virtualized_string, details_link,
-                   raw_data_link)
+                   virtualized_string, details_link, raw_data_link)
 
 out_fd = open(outfile, "a")
 out_fd.write(out_html)
