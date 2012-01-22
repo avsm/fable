@@ -67,6 +67,13 @@ for line in open(data_dir + "/logs/uname").readlines():
   arch = fields[2]
   os_string = "%s %s, %s" % (os, ver, arch)
 
+# Generate latency graphs
+l = os.listdir(results_dir + "/lat")
+for lat_file in l:
+  print lat_file
+  argv = ["python", "plot_lat.py", results_dir + "/lat/" + lat_file, lat_file]
+  subprocess.check_call(argv)
+
 # Generate throughput graphs
 argv = ["python", "plot_thr.py", results_dir, target_cpus, "0"]
 subprocess.check_call(argv)

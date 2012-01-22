@@ -1,5 +1,7 @@
 import sys, os
 
+import matplotlib
+matplotlib.use("Agg")
 import numpy as np
 import numpy.random
 import matplotlib.pyplot as plt
@@ -67,5 +69,5 @@ plt.title(sys.argv[2])
 cb = plt.colorbar(shrink=1.0, format='%.3e')
 cb.set_label('Latency in microseconds')
 
-plt.savefig("lat_" + sys.argv[1] + ".pdf", format="pdf", bbox_inches='tight')
-plt.savefig("lat_" + sys.argv[1] + ".png", format="png", bbox_inches='tight')
+#plt.savefig("lat_" + sys.argv[1] + ".pdf", format="pdf", bbox_inches='tight')
+plt.savefig(out_dir + "/lat_" + sys.argv[1] + ".png", format="png", bbox_inches='tight')
