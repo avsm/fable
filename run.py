@@ -237,4 +237,4 @@ out_file = "%s.tar.gz" % tempdir
 subprocess.check_call(["/bin/tar", "cvfz", out_file, tempdir])
 
 print "Test succeeded. Output written as", out_file
-print "Please email that file to ipc-bench-results@cl.cam.ac.uk"
+print "Please email that file to cl-ipc-bench@lists.cam.ac.uk"

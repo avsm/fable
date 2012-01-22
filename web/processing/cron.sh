@@ -3,7 +3,7 @@
 CUR_DIR=$(pwd)
 
 RESULTS_DIR=../../results
-OUT_DIR=/usr/groups/netos/html/ipc-bench
+OUT_DIR=../public
 HTML_OUTFILE=results.html
 
 cd ${RESULTS_DIR}
