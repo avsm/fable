@@ -46,7 +46,8 @@ for c in target_cpus.split(","):
   thr_graphs_links = thr_graphs_links + "<a href=\"%s\">0 to %s</a> " \
       % (graph_file, c)
 
-out_html = html % (num_cores, "<br />".join(model_names), os_string,
+#out_html = html % (num_cores, "<br />".join(model_names), os_string,
+out_html = html % (num_cores, model_names[0], os_string,
                    thr_graphs_links)
 
 out_fd = open(outfile, "a")

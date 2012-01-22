@@ -3,13 +3,14 @@
 CUR_DIR=$(pwd)
 
 RESULTS_DIR=../../results
-OUT_DIR=../public
+OUT_DIR=/usr/groups/netos/html/ipc-bench
 HTML_OUTFILE=index.html
 
 cd ${RESULTS_DIR}
 RESULTS=$(ls tmp*.tar.gz)
 cd ${CUR_DIR}
 
+cat ${PWD}/html_head.tmpl > ${OUT_DIR}/${HTML_OUTFILE}
 for r in ${RESULTS}; do
   ARCHIVE=${r}
   echo -n "Extracting ${ARCHIVE}..."
@@ -26,10 +27,11 @@ for r in ${RESULTS}; do
   TARGET_CPUS=$(cat ${DIR}/logs/target_cpus)
 
   # Now extract system information and results
-  cat ${PWD}/html_head.tmpl > ${OUT_DIR}/${HTML_OUTFILE}
   python process.py ${DIR} ${OUT_DIR}/${HTML_OUTFILE} ${TARGET_CPUS}
-  cat ${PWD}/html_foot.tmpl >> ${OUT_DIR}/${HTML_OUTFILE}
 done
+cat ${PWD}/html_foot.tmpl >> ${OUT_DIR}/${HTML_OUTFILE}
 
 rm -rf ${OUT_DIR}/tmp
 mv tmp ${OUT_DIR}/
+chmod -R g+rx ${OUT_DIR}/tmp
+chmod -R o+rx ${OUT_DIR}/tmp

@@ -1,6 +1,7 @@
 import sys, os
 
 import matplotlib as mpl
+mpl.use("Agg")
 import numpy as np
 import matplotlib.pyplot as plt
 import pylab as pyl
@@ -252,7 +253,7 @@ for dst_core in cores:
                    yerr=tcp_stddev_series, ecolor='k', label='tcp', lw=0.5)
 
   # add the subplot label
-  plt.text(0.33, 20000, labels[fig_idx - 1])
+#  plt.text(0.33, 20000, labels[fig_idx - 1])
 
   # add some ticks
   ax.set_xticks(ind+(n_bars / 2 * width))
