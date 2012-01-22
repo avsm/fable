@@ -13,7 +13,7 @@ outfile = out_dir + "/" + name + ".html"
 github_user = "ms705"
 
 print "Generating details page for %s" % name
-print "Target CPUs are: %s" % target_cpus.split(",")
+#print "Target CPUs are: %s" % target_cpus.split(",")
 
 processor_ids = []
 model_names = []
@@ -32,11 +32,18 @@ numa_string = "unknown"
 try:
   l = os.listdir(data_dir + "/logs/sys-node")
   if len(l) > 1:
-    numa_string = "yes (%d)" % len(l)
+    numa_string = "yes, %d nodes" % len(l)
   else:
     numa_string = "no"
 except:
   pass
+
+# Memory
+mem_string = "unknown"
+for line in open(data_dir + "/logs/meminfo").readlines():
+  r = re.search("MemTotal:[ ]+([0-9]+) kB", line)
+  if r:
+    mem_string = str(round((float(r.group(1)) / float(1024*1024)), 2)) + " GB"
 
 # virtualization
 virtualized_string = "unknown"
@@ -70,6 +77,17 @@ out_html = "<p style=\"background-color: lightgray;\"><b>" \
 # Generate hardware overview section
 html = "<h2>Hardware overview</h2>"
 
+hw_string = "<table>"
+row_string = "<tr><td>%s</td><td>%s</td></tr>"
+hw_string = hw_string + row_string \
+    % ("Cores:", (str(len(processor_ids)) + ", " + model_names[0]))
+hw_string = hw_string + row_string % ("NUMA:", numa_string)
+hw_string = hw_string + row_string % ("Total memory:", mem_string)
+hw_string = hw_string + row_string % ("Operating system:", os_string)
+hw_string = hw_string + row_string % ("Virtualized:", virtualized_string)
+hw_string = hw_string + "</table>"
+
+html = html + hw_string
 out_html = out_html + html
 
 # Generate latency heatmap section
