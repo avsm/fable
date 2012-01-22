@@ -216,11 +216,21 @@ except:
 	sys.exit(1)
 
 try:
+	print >>sys.stderr, "Running latency tests... (over %d CPUs)" % n_cpus
+	argv = ["./all_lat.sh", resultdir + "/lat", str(n_cpus - 1)]
+	print argv
+	subprocess.check_call(argv)
+except:
+	print >>sys.stderr, "At least one latency test failed. See output above for more detail."
+	sys.exit(1)
+
+try:
+	print >>sys.stderr, "Running throughput tests..."
 	argv = ["./all_thr.py", resultdir]
 	argv.extend([str(i) for i in target_cpus_nodes])
 	subprocess.check_call(argv)
 except:
-	print >>sys.stderr, "At least one test failed. See output above for more detail."
+	print >>sys.stderr, "At least one throughput test failed. See output above for more detail."
 	sys.exit(1)
 
 out_file = "%s.tar.gz" % tempdir
