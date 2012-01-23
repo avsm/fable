@@ -39,12 +39,10 @@ for SIZE in ${SIZES}; do
     while [[ ${c1} -lt ${NUM_CORES} ]]; do
       c2=0
       while [[ ${c2} -lt ${NUM_CORES} ]]; do
-#    for c1 in $(jot ${NUM_CORES} 0); do
-#      for c2 in $(jot ${NUM_CORES} 0); do
         d="${ODIR}/${SIZE}/${c1}-${c2}-${t}/01-${t}-headline.log"
         speed=`tail -1 ${d} | awk '{print $4}' | sed -e 's/s//g'`
         echo -n "${speed} " >> ${ofile}
-    #    rm ${ODIR}/${SIZE}/${c1}-${c2}-${t}/01-${t}-raw_tsc.log
+        rm ${ODIR}/${SIZE}/${c1}-${c2}-${t}/01-${t}-raw_tsc.log
         c2=$(expr ${c2} + 1)
       done
       echo "" >> ${ofile}
