@@ -10,6 +10,8 @@ ifeq ($(uname),Darwin)
 all_target := darwin
 endif
 
+CFLAGS = -g -Wall -O3 -D_GNU_SOURCE -DNDEBUG -std=gnu99
+LDLIBS+=-lm
 
 .PHONY: all clean run
 
@@ -39,10 +41,10 @@ x-%:
 all: $(TARGETS)
 	@ :
 
-%_lat: atomicio.o test.o xutil.o %_lat.o
+%_lat: atomicio.o test.o xutil.o %_lat.o stats.o
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^
 
-%_thr: atomicio.o test.o xutil.o %_thr.o
+%_thr: atomicio.o test.o xutil.o %_thr.o stats.o
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^
 
 tcp_nodelay_thr.o: tcp_thr.c
@@ -62,6 +64,8 @@ vmsplice_hugepages_coop_pipe_thr.o: vmsplice_pipe_thr.c
 
 vmsplice_coop_pipe_thr.o: vmsplice_pipe_thr.c
 	$(CC) $(CFLAGS) $^ -c -DVMSPLICE_COOP -o $@
+
+summarise_tsc_counters: summarise_tsc_counters.o stats.o
 
 clean:
 	rm -f *~ core *.o $(TARGETS)

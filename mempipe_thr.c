@@ -363,8 +363,6 @@ void parent_finish(test_data* td) {
   mh->size_and_flags = MH_FLAG_READY | MH_FLAG_STOP;
 #ifdef USE_FUTEX
   futex_wake(&mh->size_and_flags);
-#else
-  errx(1, "do something non-futexy to sync with parent here");
 #endif
 
   /* Wait for child to acknowledge receipt of all messages */
