@@ -39,4 +39,6 @@ void *establish_shm_segment(int nr_pages, int numa_node);
 /* Doesn't really belong here, but doesn't really belong anywhere. */
 void summarise_samples(FILE *f, double *data, int nr_samples);
 
+#ifndef PAGE_SIZE
 #define PAGE_SIZE 4096
+#endif
