@@ -281,8 +281,6 @@ establish_shm_segment(int nr_pages, int numa_node)
 {
   int fd;
   void *addr;
-  struct bitmask *alloc_nodes;
-  struct bitmask *old_mask;
 
   fd = shm_open("/memflag_lat", O_RDWR|O_CREAT|O_EXCL, 0600);
   if (fd < 0)
