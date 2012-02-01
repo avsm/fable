@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-echo "hello"
 SIZES="128"
 COUNT=10000
 LAT_TESTS="pipe_lat tcp_lat unix_lat mempipe_lat tcp_nodelay_lat"
@@ -31,7 +30,6 @@ for c1 in $(jot ${MAX_COREID}); do
       d="${ODIR}/${SIZE}/${c1}-${c2}-${t}/01-${t}-headline.log"
       speed=`tail -1 ${d} | awk '{print $4}' | sed -e 's/s//g'`
       echo -n "${speed} " >> ${ofile}
-      rm ${ODIR}/${SIZE}/${c1}-${c2}-${t}/01-${t}-raw_tsc.log
     done
   done
 done
