@@ -15,7 +15,7 @@ LDLIBS+=-lm
 
 .PHONY: all clean run
 
-CFLAGS_Linux = -DUSE_INLINE_ASM
+CFLAGS_Linux = -DUSE_INLINE_ASM -DLinux
 CFLAGS_OpenBSD = -DUSE_INLINE_ASM
 CFLAGS += -g -Wall -O3 -D_GNU_SOURCE -DNDEBUG -std=gnu99 $(CFLAGS_$(uname))
 
