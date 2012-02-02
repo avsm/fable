@@ -42,7 +42,6 @@ for SIZE in ${SIZES}; do
         d="${ODIR}/${SIZE}/${c1}-${c2}-${t}/01-${t}-headline.log"
         speed=`tail -1 ${d} | awk '{print $4}' | sed -e 's/s//g'`
         echo -n "${speed} " >> ${ofile}
-        rm ${ODIR}/${SIZE}/${c1}-${c2}-${t}/01-${t}-raw_tsc.log
         c2=$(expr ${c2} + 1)
       done
       echo "" >> ${ofile}
