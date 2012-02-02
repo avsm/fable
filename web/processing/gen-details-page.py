@@ -52,7 +52,7 @@ for line in open(data_dir + "/logs/dmesg_virt").readlines():
   if r:
     virtualized_string = "no"
     break
-  r = re.search("virtual hardware", line)
+  r = re.search("(Xen|virtual hardware|virtualized system)", line)
   # need to differentiate between different forms of virtualization
   if r:
     virtualized_string = "yes"
@@ -130,8 +130,10 @@ out_html = out_html + html
 html = "<h2>Throughput</h2>"
 html = html + "<p>These graphs show the IPC throughput for continous " \
     "communication between a pair of cores. The y-axis shows throughput in " \
-    "Mbps, and the x-axis different chunk sizes.<br />" \
-    "<b>Click on the graphs to show a larger version.</b></p>"
+    "Gbps, and the x-axis different chunk sizes.<br />" \
+    "<b>Click on the graphs to show a larger version.</b></p>" \
+    "<p><img src=\"../images/thr_legend.png\" class=\"aleft\" " \
+    "style=\"border: none;\" /></p>"
 html = html + "<table><tr>"
 thr_graphs_links = ""
 i = 0

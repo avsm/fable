@@ -7,6 +7,7 @@ import numpy.random
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import pylab as pyl
+import re
 
 def get_data(filename):
   data = np.loadtxt(filename)
@@ -69,7 +70,8 @@ plt.ylabel('Core ID')
 plt.ylim(-0.5, int(sys.argv[4])-0.5)
 plt.xlabel('Core ID')
 plt.xlim(-0.5, int(sys.argv[4])-0.5)
-plt.title(sys.argv[2])
+test_name = re.search("(.+)\.csv", sys.argv[2])
+plt.title(test_name.group(1))
 
 cb = plt.colorbar(shrink=1.0, format='%.3e')
 cb.set_label('Latency in microseconds')
