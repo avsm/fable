@@ -93,7 +93,7 @@ html = "<h2>Hardware overview</h2>"
 hw_string = "<table>"
 row_string = "<tr><td>%s</td><td>%s</td></tr>"
 hw_string = hw_string + row_string \
-    % ("Cores:", (str(len(processor_ids)) + ", " + model_names[0]))
+    % ("Cores (threads):", (str(len(processor_ids)) + ", " + model_names[0]))
 hw_string = hw_string + row_string % ("NUMA:", numa_string)
 hw_string = hw_string + row_string % ("Total memory:", mem_string)
 hw_string = hw_string + row_string % ("Operating system:", os_string)

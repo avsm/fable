@@ -29,7 +29,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <math.h>
-#include <numa.h>
 #include <sched.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -149,12 +148,25 @@ open_logfile(test_data *td, const char *file)
 void
 dump_tsc_counters(test_data *td, unsigned long *counts, int nr_samples)
 {
-  FILE *f = open_logfile(td, "raw_tsc");
+  FILE *f = open_logfile(td, "tsc");
   double clock_freq = get_tsc_freq();
   int i;
+  double *times = (double *)counts;
+  times = calloc(sizeof(double), nr_samples);
   for (i = 0; i < nr_samples; i++)
-    fprintf(f, "%e\n", counts[i] / clock_freq);
+    times[i] = counts[i] / clock_freq;
+  free(counts);
+  summarise_samples(f, times, nr_samples);
   fclose(f);
+
+#ifdef DUMP_RAW_TSCS
+  f = open_logfile(td, "raw_tsc");
+  for (i = 0; i < nr_samples; i++)
+    fprintf(f, "%e\n", times[i]);
+  fclose(f);
+#endif
+
+  free(times);
 }
 
 static void
@@ -238,7 +250,7 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
     }
   }
 
-  fprintf(stderr, "size %d count %" PRId64 " first_cpu %d second_cpu %d parallel %d tsc %d produce-method %d %s %s numa_node %d output_dir %s\n",
+  fprintf(stderr, "size %d count %" PRIu64 " first_cpu %d second_cpu %d parallel %d tsc %d produce-method %d %s %s numa_node %d output_dir %s\n",
 	  *size, *count, *first_cpu, *second_cpu, *parallel, *per_iter_timings, *produce_method, *read_in_place ? "read-in-place" : "copy-read", *write_in_place ? "write-in-place" : "copy-write",
 	  *numa_node,
 	  *output_dir);
@@ -247,6 +259,7 @@ parse_args(int argc, char *argv[], bool *per_iter_timings, int *size, size_t *co
 void
 setaffinity(int cpunum)
 {
+#ifdef Linux
   cpu_set_t *mask;
   size_t size;
   int i;
@@ -261,15 +274,21 @@ setaffinity(int cpunum)
   if (i == -1)
     err(1, "sched_setaffinity");
   CPU_FREE(mask);
+#else
+  fprintf(stderr, "setaffinity: skipping\n");
+#endif
 }
+
+#ifdef Linux
+#include <numa.h>
+#endif
 
 void *
 establish_shm_segment(int nr_pages, int numa_node)
 {
+#ifdef Linux
   int fd;
   void *addr;
-  struct bitmask *alloc_nodes;
-  struct bitmask *old_mask;
 
   fd = shm_open("/memflag_lat", O_RDWR|O_CREAT|O_EXCL, 0600);
   if (fd < 0)
@@ -288,6 +307,9 @@ establish_shm_segment(int nr_pages, int numa_node)
   close(fd);
 
   return addr;
+#else
+  errx(1, "establish_shm_segment not implemented\n");
+#endif
 }
 
 void

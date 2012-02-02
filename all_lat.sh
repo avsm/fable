@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-echo "hello"
 SIZES="128"
 COUNT=10000
 LAT_TESTS="pipe_lat tcp_lat unix_lat mempipe_lat tcp_nodelay_lat"
