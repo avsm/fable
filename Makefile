@@ -11,7 +11,6 @@ all_target := darwin
 endif
 
 CFLAGS = -g -Wall -O3 -D_GNU_SOURCE -DNDEBUG -std=gnu99
-LDLIBS+=-lm
 
 .PHONY: all clean run
 
